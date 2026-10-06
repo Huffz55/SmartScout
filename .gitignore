@@ -1,0 +1,31 @@
+# Visual Studio / Rider / IDE folders
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.sln.docstates
+
+# Build and Release folders
+bin/
+obj/
+Publish/
+publish/
+out/
+TestResults/
+
+# Environment and Secrets
+.env
+appsettings.Development.json
+appsettings.Production.json
+appsettings.Staging.json
+secrets.json
+
+# Mac OS
+.DS_Store
+
+# Temporary files
+*.swp
+*.~
+*.tmp
+*.bak
