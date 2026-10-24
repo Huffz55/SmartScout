@@ -3,4 +3,5 @@
   <Project Path="SmartScout.Application/SmartScout.Application.csproj" />
   <Project Path="SmartScout.Domain/SmartScout.Domain.csproj" />
   <Project Path="SmartScout.Infrastructure/SmartScout.Infrastructure.csproj" />
+  <Project Path="SmartScout.UnitTests/SmartScout.UnitTests.csproj" />
 </Solution>

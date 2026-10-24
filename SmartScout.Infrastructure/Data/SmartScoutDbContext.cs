@@ -17,11 +17,23 @@ public class SmartScoutDbContext : DbContext, ISmartScoutDbContext
     {
         base.OnModelCreating(modelBuilder);
 
+        // PostgreSQL Trigram extension for fast full-text ILIKE searches
+        modelBuilder.HasPostgresExtension("pg_trgm");
+
         modelBuilder.Entity<Player>(entity =>
         {
             entity.HasKey(e => e.Id);
             
             entity.HasIndex(e => e.ExternalApiId).IsUnique();
+
+            // High performance GIN Trigram indexes for sub-millisecond text searching
+            entity.HasIndex(e => e.LastName)
+                .HasMethod("gin")
+                .HasOperators("gin_trgm_ops");
+
+            entity.HasIndex(e => e.FirstName)
+                .HasMethod("gin")
+                .HasOperators("gin_trgm_ops");
 
             entity.Property(e => e.FirstName)
                 .IsRequired()
@@ -43,6 +55,9 @@ public class SmartScoutDbContext : DbContext, ISmartScoutDbContext
             entity.Property(e => e.League)
                 .IsRequired()
                 .HasMaxLength(50);
+
+            entity.Property(e => e.Nationality)
+                .HasMaxLength(50);
                 
             entity.HasMany(e => e.SeasonStats)
                 .WithOne(e => e.Player)
@@ -53,9 +68,26 @@ public class SmartScoutDbContext : DbContext, ISmartScoutDbContext
         modelBuilder.Entity<PlayerSeasonStat>(entity =>
         {
             entity.HasKey(e => e.Id);
+
+            entity.HasIndex(e => new { e.PlayerId, e.Season }).IsUnique();
             
             entity.Property(e => e.Minutes)
-                .HasMaxLength(10);
+                .HasPrecision(4, 1);
+
+            entity.Property(e => e.Pir)
+                .HasPrecision(4, 1);
+
+            entity.Property(e => e.FoulsDrawn)
+                .HasPrecision(4, 1);
+
+            entity.Property(e => e.PointsPer40)
+                .HasPrecision(4, 1);
+
+            entity.Property(e => e.AssistsPer40)
+                .HasPrecision(4, 1);
+
+            entity.Property(e => e.ReboundsPer40)
+                .HasPrecision(4, 1);
         });
     }
 }

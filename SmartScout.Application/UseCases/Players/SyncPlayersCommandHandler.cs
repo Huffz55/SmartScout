@@ -49,7 +49,9 @@ public class SyncPlayersCommandHandler : IRequestHandler<SyncPlayersCommand, int
                             newPlayer.Height,
                             newPlayer.WeightPounds,
                             newPlayer.TeamName,
-                            newPlayer.League
+                            newPlayer.League,
+                            newPlayer.Nationality,
+                            newPlayer.BirthDate
                         );
                     }
                     else

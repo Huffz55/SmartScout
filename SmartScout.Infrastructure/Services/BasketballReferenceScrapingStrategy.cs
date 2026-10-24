@@ -1,11 +1,15 @@
 using HtmlAgilityPack;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Microsoft.Playwright;
+using SmartScout.Application.DTOs;
 using SmartScout.Application.Interfaces;
 using SmartScout.Domain.Entities;
+using SmartScout.Infrastructure.Options;
+using SmartScout.Infrastructure.Services.Scraping;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -13,227 +17,173 @@ namespace SmartScout.Infrastructure.Services;
 
 public class BasketballReferenceScrapingStrategy : ISeasonStatSyncStrategy
 {
-    private readonly HttpClient _httpClient;
     private readonly ILogger<BasketballReferenceScrapingStrategy> _logger;
+    private readonly ScraperOptions _options;
+    private readonly BasketballReferenceUrlBuilder _urlBuilder;
+    private readonly BasketballReferenceDomParser _domParser;
 
-    public BasketballReferenceScrapingStrategy(HttpClient httpClient, ILogger<BasketballReferenceScrapingStrategy> logger)
+    public BasketballReferenceScrapingStrategy(
+        ILogger<BasketballReferenceScrapingStrategy> logger,
+        IOptions<ScraperOptions> options,
+        BasketballReferenceUrlBuilder urlBuilder,
+        BasketballReferenceDomParser domParser)
     {
-        _httpClient = httpClient;
         _logger = logger;
+        _options = options.Value;
+        _urlBuilder = urlBuilder;
+        _domParser = domParser;
     }
 
-    public async IAsyncEnumerable<IEnumerable<PlayerSeasonStat>> FetchSeasonStatsAsync(List<Player> players, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    public async IAsyncEnumerable<SeasonStatSyncBatchResult> FetchSeasonStatsAsync(
+        List<Player> players, 
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
     {
+        using var playwright = await Playwright.CreateAsync();
+        await using var browser = await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions 
+        { 
+            Headless = _options.Headless 
+        });
+        
+        await using var context = await browser.NewContextAsync(new BrowserNewContextOptions 
+        {
+            UserAgent = _options.UserAgent
+        });
+        
+        var page = await context.NewPageAsync();
+
         foreach (var chunk in players.Chunk(30))
         {
             if (cancellationToken.IsCancellationRequested) break;
 
             var batchStats = new List<PlayerSeasonStat>();
+            var phantomPlayerIds = new List<Guid>();
 
             foreach (var player in chunk)
             {
                 if (cancellationToken.IsCancellationRequested) break;
 
-                if (string.IsNullOrWhiteSpace(player.LastName) || string.IsNullOrWhiteSpace(player.FirstName))
-                    continue;
-
-                string cleanLastName = new string(player.LastName.Where(char.IsLetter).ToArray()).ToLowerInvariant();
-                string cleanFirstName = new string(player.FirstName.Where(char.IsLetter).ToArray()).ToLowerInvariant();
-
-                if (cleanLastName.Length == 0 || cleanFirstName.Length == 0)
-                    continue;
-
-                string slugLastName = cleanLastName.Length > 5 ? cleanLastName.Substring(0, 5) : cleanLastName;
-                string slugFirstName = cleanFirstName.Length > 2 ? cleanFirstName.Substring(0, 2) : cleanFirstName;
-                string initial = slugLastName.Substring(0, 1);
-
-                string slug = $"{initial}/{slugLastName}{slugFirstName}01.html";
-                string url = $"https://www.basketball-reference.com/players/{slug}";
-
-                try
+                // Basketball-Reference only archives NBA players; European players are handled by EuroSeasonStatSyncStrategy
+                if (!string.Equals(player.League, "NBA", StringComparison.OrdinalIgnoreCase))
                 {
-                    var response = await _httpClient.GetAsync(url, cancellationToken);
-                    if (response.IsSuccessStatusCode)
+                    continue;
+                }
+
+                for (int suffixIndex = 1; suffixIndex <= _options.MaxSuffixAttempts; suffixIndex++)
+                {
+                    var urlInfo = _urlBuilder.GeneratePlayerUrl(player.FirstName, player.LastName, suffixIndex);
+                    if (urlInfo == null) break;
+
+                    string url = urlInfo.Value.url;
+
+                    try
                     {
-                        var html = await response.Content.ReadAsStringAsync(cancellationToken);
-                        var doc = new HtmlDocument();
-                        doc.LoadHtml(html);
-
-                        var seasonData = new Dictionary<int, (int gp, string min, decimal? pts, decimal? ast, decimal? reb, decimal? stl, decimal? blk, decimal? fg, decimal? fg3, decimal? ft, decimal? tov)>();
+                        var response = await page.GotoAsync(url, new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded });
                         
-                        var table = doc.DocumentNode.SelectSingleNode("//table[@id='per_game']") 
-                                    ?? doc.DocumentNode.SelectSingleNode("//table[contains(@id, 'per_game')]");
-
-                        if (table == null)
+                        if (response != null && response.Ok)
                         {
-                            var comments = doc.DocumentNode.SelectNodes("//comment()");
-                            if (comments != null)
+                            try 
                             {
-                                foreach (var comment in comments)
+                                await page.WaitForSelectorAsync("table[id*='per_game']", new PageWaitForSelectorOptions 
+                                { 
+                                    State = WaitForSelectorState.Attached, 
+                                    Timeout = _options.SelectorTimeoutMs 
+                                });
+                                
+                                var html = await page.ContentAsync();
+                                var doc = new HtmlDocument();
+                                doc.LoadHtml(html);
+
+                                var h1Node = doc.DocumentNode.SelectSingleNode("//h1");
+                                string pagePlayerName = h1Node?.InnerText?.Trim() ?? string.Empty;
+
+                                if (!_urlBuilder.IsPlayerMatch(pagePlayerName, player.FirstName, player.LastName))
                                 {
-                                    if (comment.InnerText.Contains("id=\"per_game\""))
-                                    {
-                                        var tempDoc = new HtmlDocument();
-                                        tempDoc.LoadHtml(comment.InnerText);
-                                        table = tempDoc.DocumentNode.SelectSingleNode("//table[@id='per_game']");
-                                        if (table != null) break;
-                                    }
+                                    _logger.LogInformation("Slug collision detected at {Url} (Page is '{PageName}', expected '{First} {Last}'). Trying next index...", 
+                                        url, pagePlayerName, player.FirstName, player.LastName);
+                                    continue;
                                 }
+
+                                var perGameData = _domParser.ParsePerGameTable(doc);
+                                var advancedData = _domParser.ParseAdvancedTable(doc);
+
+                                foreach (var kvp in perGameData)
+                                {
+                                    int season = kvp.Key;
+                                    var pg = kvp.Value;
+                                    advancedData.TryGetValue(season, out var adv);
+
+                                    var stat = new PlayerSeasonStat(
+                                        player.Id,
+                                        season,
+                                        pg.GamesPlayed,
+                                        pg.Minutes,
+                                        pg.Points,
+                                        pg.Assists,
+                                        pg.Rebounds,
+                                        pg.Steals,
+                                        pg.Blocks,
+                                        pg.FgPct,
+                                        pg.Fg3Pct,
+                                        pg.FtPct,
+                                        pg.Turnovers,
+                                        adv?.TrueShootingPct,
+                                        adv?.PlayerEfficiencyRating,
+                                        adv?.UsagePct,
+                                        adv?.TotalReboundPct,
+                                        adv?.AssistPct,
+                                        adv?.WinShares,
+                                        adv?.BoxPlusMinus
+                                    );
+                                    batchStats.Add(stat);
+                                }
+
+                                if (perGameData.Any())
+                                {
+                                    _logger.LogInformation("Successfully parsed {Count} seasons for {First} {Last} at {Url}", perGameData.Count, player.FirstName, player.LastName, url);
+                                }
+                                else
+                                {
+                                    _logger.LogWarning("DOM Parse Failed: No seasons found for {First} {Last} at {Url}", player.FirstName, player.LastName, url);
+                                }
+
+                                break; // Suffix loop break on success
+                            }
+                            catch (TimeoutException)
+                            {
+                                _logger.LogWarning("Timeout waiting for table for {First} {Last}. Marked as phantom player for deletion.", player.FirstName, player.LastName);
+                                phantomPlayerIds.Add(player.Id);
+                                break;
                             }
                         }
-
-                        if (table != null)
+                        else if (response != null && response.Status == 404)
                         {
-                            var rows = table.SelectNodes(".//tbody/tr");
-                            if (rows != null)
-                            {
-                                foreach (var row in rows)
-                                {
-                                    var seasonNode = row.SelectSingleNode(".//th[@data-stat='season']") ?? row.SelectSingleNode(".//td[@data-stat='season']");
-                                    if (seasonNode != null)
-                                    {
-                                        string seasonText = seasonNode.InnerText;
-                                        var parts = seasonText.Split('-');
-                                        if (parts.Length == 2 && int.TryParse(parts[0], out int startYear))
-                                        {
-                                            int parsedSeason = startYear + 1;
-
-                                            if (!seasonData.ContainsKey(parsedSeason))
-                                            {
-                                                int.TryParse(row.SelectSingleNode(".//td[@data-stat='g']")?.InnerText, out int gp);
-                                                string minutes = row.SelectSingleNode(".//td[@data-stat='mp_per_g']")?.InnerText ?? "0";
-                                                decimal.TryParse(row.SelectSingleNode(".//td[@data-stat='pts_per_g']")?.InnerText, out decimal pts);
-                                                decimal.TryParse(row.SelectSingleNode(".//td[@data-stat='ast_per_g']")?.InnerText, out decimal ast);
-                                                decimal.TryParse(row.SelectSingleNode(".//td[@data-stat='trb_per_g']")?.InnerText, out decimal reb);
-                                                decimal.TryParse(row.SelectSingleNode(".//td[@data-stat='stl_per_g']")?.InnerText, out decimal stl);
-                                                decimal.TryParse(row.SelectSingleNode(".//td[@data-stat='blk_per_g']")?.InnerText, out decimal blk);
-                                                decimal.TryParse(row.SelectSingleNode(".//td[@data-stat='fg_pct']")?.InnerText, out decimal fgPct);
-                                                decimal.TryParse(row.SelectSingleNode(".//td[@data-stat='fg3_pct']")?.InnerText, out decimal fg3Pct);
-                                                decimal.TryParse(row.SelectSingleNode(".//td[@data-stat='ft_pct']")?.InnerText, out decimal ftPct);
-                                                decimal.TryParse(row.SelectSingleNode(".//td[@data-stat='tov_per_g']")?.InnerText, out decimal tov);
-                                                
-                                                seasonData[parsedSeason] = (gp, minutes, pts, ast, reb, stl, blk, fgPct, fg3Pct, ftPct, tov);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        var advSeasonData = new Dictionary<int, (decimal? ts, decimal? per, decimal? usg, decimal? trb, decimal? ast, decimal? ws, decimal? bpm)>();
-
-                        var advTable = doc.DocumentNode.SelectSingleNode("//table[@id='advanced']") 
-                                    ?? doc.DocumentNode.SelectSingleNode("//table[contains(@id, 'advanced')]");
-
-                        if (advTable == null)
-                        {
-                            var comments = doc.DocumentNode.SelectNodes("//comment()");
-                            if (comments != null)
-                            {
-                                foreach (var comment in comments)
-                                {
-                                    if (comment.InnerText.Contains("id=\"advanced\""))
-                                    {
-                                        var tempDoc = new HtmlDocument();
-                                        tempDoc.LoadHtml(comment.InnerText);
-                                        advTable = tempDoc.DocumentNode.SelectSingleNode("//table[@id='advanced']");
-                                        if (advTable != null) break;
-                                    }
-                                }
-                            }
-                        }
-
-                        if (advTable != null)
-                        {
-                            var advRows = advTable.SelectNodes(".//tbody/tr");
-                            if (advRows != null)
-                            {
-                                foreach (var row in advRows)
-                                {
-                                    var seasonNode = row.SelectSingleNode(".//th[@data-stat='season']") ?? row.SelectSingleNode(".//td[@data-stat='season']");
-                                    if (seasonNode != null)
-                                    {
-                                        string seasonText = seasonNode.InnerText;
-                                        var parts = seasonText.Split('-');
-                                        if (parts.Length == 2 && int.TryParse(parts[0], out int startYear))
-                                        {
-                                            int parsedSeason = startYear + 1;
-
-                                            if (!advSeasonData.ContainsKey(parsedSeason))
-                                            {
-                                                decimal? tsPct = null, per = null, usgPct = null, trbPct = null, astPct = null, ws = null, bpm = null;
-                                                if (decimal.TryParse(row.SelectSingleNode(".//td[@data-stat='ts_pct']")?.InnerText, out decimal t)) tsPct = t;
-                                                if (decimal.TryParse(row.SelectSingleNode(".//td[@data-stat='per']")?.InnerText, out decimal p)) per = p;
-                                                if (decimal.TryParse(row.SelectSingleNode(".//td[@data-stat='usg_pct']")?.InnerText, out decimal u)) usgPct = u;
-                                                if (decimal.TryParse(row.SelectSingleNode(".//td[@data-stat='trb_pct']")?.InnerText, out decimal trb)) trbPct = trb;
-                                                if (decimal.TryParse(row.SelectSingleNode(".//td[@data-stat='ast_pct']")?.InnerText, out decimal a)) astPct = a;
-                                                if (decimal.TryParse(row.SelectSingleNode(".//td[@data-stat='ws']")?.InnerText, out decimal w)) ws = w;
-                                                if (decimal.TryParse(row.SelectSingleNode(".//td[@data-stat='bpm']")?.InnerText, out decimal b)) bpm = b;
-                                                
-                                                advSeasonData[parsedSeason] = (tsPct, per, usgPct, trbPct, astPct, ws, bpm);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        foreach (var kvp in seasonData)
-                        {
-                            int s = kvp.Key;
-                            var pg = kvp.Value;
-                            advSeasonData.TryGetValue(s, out var adv);
-
-                            var stat = new PlayerSeasonStat(
-                                player.Id,
-                                s,
-                                pg.gp,
-                                pg.min,
-                                pg.pts,
-                                pg.ast,
-                                pg.reb,
-                                pg.stl,
-                                pg.blk,
-                                pg.fg,
-                                pg.fg3,
-                                pg.ft,
-                                pg.tov,
-                                adv.ts,
-                                adv.per,
-                                adv.usg,
-                                adv.trb,
-                                adv.ast,
-                                adv.ws,
-                                adv.bpm
-                            );
-                            batchStats.Add(stat);
-                        }
-
-                        if (seasonData.Any())
-                        {
-                            _logger.LogInformation("Successfully parsed {Count} seasons for {First} {Last}", seasonData.Count, player.FirstName, player.LastName);
+                            _logger.LogWarning("404 Not Found for {First} {Last} at {Url}. Skipping.", player.FirstName, player.LastName, url);
+                            break;
                         }
                         else
                         {
-                            _logger.LogWarning("DOM Parse Failed: No seasons found for {First} {Last} at {Url}", player.FirstName, player.LastName, url);
+                            _logger.LogWarning("HTTP {StatusCode} for {First} {Last} at {Url}", response?.Status, player.FirstName, player.LastName, url);
+                            break;
                         }
                     }
-                    else
+                    catch (TimeoutException)
                     {
-                        _logger.LogWarning("HTTP {StatusCode} for {First} {Last} at {Url}", response.StatusCode, player.FirstName, player.LastName, url);
+                        _logger.LogWarning("Timeout loading page for {First} {Last}. Skipping.", player.FirstName, player.LastName);
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Exception while scraping stats for {First} {Last} at {Url}", player.FirstName, player.LastName, url);
+                        break;
                     }
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Exception while scraping stats for {First} {Last} at {Url}", player.FirstName, player.LastName, url);
-                }
 
-                await Task.Delay(2000, cancellationToken);
+                await Task.Delay(_options.DelayBetweenRequestsMs, cancellationToken);
             }
 
-            if (batchStats.Any())
+            if (batchStats.Any() || phantomPlayerIds.Any())
             {
-                yield return batchStats;
+                yield return new SeasonStatSyncBatchResult(batchStats, phantomPlayerIds);
             }
         }
     }

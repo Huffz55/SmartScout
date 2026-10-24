@@ -20,6 +20,7 @@ namespace SmartScout.Infrastructure.Migrations
                 .HasAnnotation("ProductVersion", "10.0.12")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
+            NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "pg_trgm");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
             modelBuilder.Entity("SmartScout.Domain.Entities.Player", b =>
@@ -27,6 +28,9 @@ namespace SmartScout.Infrastructure.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("BirthDate")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("ExternalApiId")
                         .HasColumnType("integer");
@@ -50,6 +54,10 @@ namespace SmartScout.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
+                    b.Property<string>("Nationality")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
                     b.Property<string>("Position")
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
@@ -66,6 +74,16 @@ namespace SmartScout.Infrastructure.Migrations
                     b.HasIndex("ExternalApiId")
                         .IsUnique();
 
+                    b.HasIndex("FirstName");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("FirstName"), "gin");
+                    NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("FirstName"), new[] { "gin_trgm_ops" });
+
+                    b.HasIndex("LastName");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("LastName"), "gin");
+                    NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("LastName"), new[] { "gin_trgm_ops" });
+
                     b.ToTable("Players");
                 });
 
@@ -81,6 +99,10 @@ namespace SmartScout.Infrastructure.Migrations
                     b.Property<decimal?>("Assists")
                         .HasColumnType("numeric");
 
+                    b.Property<decimal?>("AssistsPer40")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)");
+
                     b.Property<decimal?>("Blocks")
                         .HasColumnType("numeric");
 
@@ -93,15 +115,23 @@ namespace SmartScout.Infrastructure.Migrations
                     b.Property<decimal?>("FgPct")
                         .HasColumnType("numeric");
 
+                    b.Property<decimal?>("FoulsDrawn")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)");
+
                     b.Property<decimal?>("FtPct")
                         .HasColumnType("numeric");
 
                     b.Property<int>("GamesPlayed")
                         .HasColumnType("integer");
 
-                    b.Property<string>("Minutes")
-                        .HasMaxLength(10)
-                        .HasColumnType("character varying(10)");
+                    b.Property<decimal?>("Minutes")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)");
+
+                    b.Property<decimal?>("Pir")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)");
 
                     b.Property<decimal?>("PlayerEfficiencyRating")
                         .HasColumnType("numeric");
@@ -112,8 +142,16 @@ namespace SmartScout.Infrastructure.Migrations
                     b.Property<decimal?>("Points")
                         .HasColumnType("numeric");
 
+                    b.Property<decimal?>("PointsPer40")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)");
+
                     b.Property<decimal?>("Rebounds")
                         .HasColumnType("numeric");
+
+                    b.Property<decimal?>("ReboundsPer40")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)");
 
                     b.Property<int>("Season")
                         .HasColumnType("integer");
@@ -138,7 +176,8 @@ namespace SmartScout.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("PlayerId");
+                    b.HasIndex("PlayerId", "Season")
+                        .IsUnique();
 
                     b.ToTable("SeasonStats");
                 });
