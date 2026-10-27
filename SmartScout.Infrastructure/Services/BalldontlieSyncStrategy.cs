@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -19,8 +20,17 @@ public class BalldontlieSyncStrategy : IPlayerSyncStrategy
         _httpClient = httpClient;
     }
 
-    public async IAsyncEnumerable<IEnumerable<Player>> FetchPlayersAsync(int cursor, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+    public async IAsyncEnumerable<IEnumerable<Player>> FetchPlayersAsync(
+        int cursor,
+        [EnumeratorCancellation] CancellationToken cancellationToken,
+        SyncFilterContext? filter = null)
     {
+        // NBA players sync runs only when explicitly targeted (e.g. ?league=NBA), not during general all-league sweeps
+        if (filter != null && (!filter.ShouldProcessLeague("NBA") || (filter.IsAllLeagues && !filter.HasExplicitLeague("NBA"))))
+        {
+            yield break;
+        }
+
         int? currentCursor = cursor > 0 ? cursor : null;
         var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
 
@@ -32,7 +42,6 @@ public class BalldontlieSyncStrategy : IPlayerSyncStrategy
             
             if (!response.IsSuccessStatusCode)
             {
-                // If the StandardResilienceHandler exhausted its retries or it's a 404/etc, we break
                 break;
             }
 
@@ -41,7 +50,6 @@ public class BalldontlieSyncStrategy : IPlayerSyncStrategy
 
             var dtos = result?.Data ?? new List<BalldontliePlayerDto>();
 
-            // Map DTOs to Domain Entities
             var mappedPlayers = dtos.Select(dto => 
             {
                 int? weightPounds = int.TryParse(dto.Weight, out int parsedWeight) ? parsedWeight : (int?)null;
@@ -62,7 +70,6 @@ public class BalldontlieSyncStrategy : IPlayerSyncStrategy
                 yield return mappedPlayers;
             }
 
-            // Check if there is a next page
             if (result?.Meta?.NextCursor == null)
             {
                 break;

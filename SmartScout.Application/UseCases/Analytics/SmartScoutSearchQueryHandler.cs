@@ -38,7 +38,7 @@ public class SmartScoutSearchQueryHandler : IRequestHandler<SmartScoutSearchQuer
         var query = _dbContext.SeasonStats
             .AsNoTracking()
             .Include(s => s.Player)
-            .Where(s => s.GamesPlayed >= 10);
+            .Where(s => s.GamesPlayed >= 3);
 
         if (request.Season.HasValue)
         {

@@ -42,12 +42,15 @@ public class PlayerScoutingReportDto
     public decimal? WinShares { get; set; }
     public decimal? BoxPlusMinus { get; set; }
     public decimal? Pir { get; set; }
+    public decimal? PtsPer36 { get; set; }
+    public decimal? AssistToTurnoverRatio { get; set; }
     public decimal? FoulsDrawn { get; set; }
     public decimal? PointsPer40 { get; set; }
     public decimal? AssistsPer40 { get; set; }
     public decimal? ReboundsPer40 { get; set; }
     public double? EuropeanCompatibilityIndex { get; set; }
     public double? DefensivePressureIndex { get; set; }
+    public double? BuyLowBounceBackIndex { get; set; }
 
     public string TacticalVerdict { get; set; } = string.Empty;
 }

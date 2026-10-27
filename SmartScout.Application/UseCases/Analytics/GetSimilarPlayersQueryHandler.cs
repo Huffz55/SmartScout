@@ -75,7 +75,7 @@ public class GetSimilarPlayersQueryHandler : IRequestHandler<GetSimilarPlayersQu
                 PlayerId = x.Player.Id,
                 FirstName = x.Player.FirstName,
                 LastName = x.Player.LastName,
-                TeamName = x.Player.TeamName,
+                TeamName = !string.IsNullOrWhiteSpace(x.Stat.TeamName) ? x.Stat.TeamName : x.Player.TeamName,
                 Position = x.Player.Position,
                 Season = x.Stat.Season,
                 SimilarityScore = x.SimilarityScore,
@@ -96,7 +96,7 @@ public class GetSimilarPlayersQueryHandler : IRequestHandler<GetSimilarPlayersQu
                 FoulsDrawn = x.Stat.FoulsDrawn,
                 PointsPer40 = x.Stat.PointsPer40,
                 Nationality = x.Player.Nationality,
-                League = x.Player.League,
+                League = !string.IsNullOrWhiteSpace(x.Stat.League) ? x.Stat.League : x.Player.League,
                 RadarMetrics = _analyticsService.CalculateRadarMetrics(x.Stat)
             })
             .ToList();

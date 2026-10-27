@@ -23,6 +23,117 @@ namespace SmartScout.Infrastructure.Migrations
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "pg_trgm");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("SmartScout.Domain.Entities.BasketballLeague", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<string>("Country")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<decimal>("DifficultyCoefficient")
+                        .HasPrecision(4, 2)
+                        .HasColumnType("numeric(4,2)");
+
+                    b.Property<string>("ExternalIdsJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)");
+
+                    b.Property<string>("Region")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<int>("TierLevel")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.ToTable("Leagues");
+                });
+
+            modelBuilder.Entity("SmartScout.Domain.Entities.BasketballSeason", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("EndYear")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsCurrent")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<int>("StartYear")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EndYear")
+                        .IsUnique();
+
+                    b.HasIndex("Label")
+                        .IsUnique();
+
+                    b.ToTable("Seasons");
+                });
+
+            modelBuilder.Entity("SmartScout.Domain.Entities.IngestionJobLog", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasColumnType("text");
+
+                    b.Property<int>("LastScrapedPage")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("LeagueCode")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<int>("Season")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LeagueCode", "Season")
+                        .IsUnique();
+
+                    b.ToTable("IngestionJobLogs");
+                });
+
             modelBuilder.Entity("SmartScout.Domain.Entities.Player", b =>
                 {
                     b.Property<Guid>("Id")
@@ -32,17 +143,36 @@ namespace SmartScout.Infrastructure.Migrations
                     b.Property<DateTime?>("BirthDate")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int?>("DraftPick")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("DraftYear")
+                        .HasColumnType("integer");
+
                     b.Property<int>("ExternalApiId")
                         .HasColumnType("integer");
+
+                    b.Property<string>("ExternalIdsJson")
+                        .HasColumnType("jsonb");
 
                     b.Property<string>("FirstName")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(205)
+                        .HasColumnType("character varying(205)")
+                        .HasDefaultValue("");
+
                     b.Property<string>("Height")
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
+
+                    b.Property<int?>("HeightCm")
+                        .HasColumnType("integer");
 
                     b.Property<string>("LastName")
                         .IsRequired()
@@ -58,7 +188,22 @@ namespace SmartScout.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
+                    b.Property<string>("NormalizedName")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(205)
+                        .HasColumnType("character varying(205)")
+                        .HasDefaultValue("");
+
                     b.Property<string>("Position")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("PrimaryPosition")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<string>("SecondaryPosition")
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
@@ -66,7 +211,13 @@ namespace SmartScout.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<int?>("WeightKg")
+                        .HasColumnType("integer");
+
                     b.Property<int?>("WeightPounds")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("WingspanCm")
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
@@ -84,6 +235,11 @@ namespace SmartScout.Infrastructure.Migrations
                     NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("LastName"), "gin");
                     NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("LastName"), new[] { "gin_trgm_ops" });
 
+                    b.HasIndex("NormalizedName");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("NormalizedName"), "gin");
+                    NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("NormalizedName"), new[] { "gin_trgm_ops" });
+
                     b.ToTable("Players");
                 });
 
@@ -96,17 +252,46 @@ namespace SmartScout.Infrastructure.Migrations
                     b.Property<decimal?>("AssistPct")
                         .HasColumnType("numeric");
 
+                    b.Property<decimal?>("AssistToTurnoverRatio")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)");
+
                     b.Property<decimal?>("Assists")
                         .HasColumnType("numeric");
 
                     b.Property<decimal?>("AssistsPer40")
-                        .HasPrecision(4, 1)
-                        .HasColumnType("numeric(4,1)");
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)");
+
+                    b.Property<decimal?>("AstPer36")
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)");
+
+                    b.Property<decimal?>("BlkPer36")
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)");
 
                     b.Property<decimal?>("Blocks")
                         .HasColumnType("numeric");
 
                     b.Property<decimal?>("BoxPlusMinus")
+                        .HasColumnType("numeric");
+
+                    b.Property<string>("CompetitionPhase")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasDefaultValue("Regular Season");
+
+                    b.Property<decimal?>("DefensiveRebounds")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal?>("EffectiveFgPct")
+                        .HasPrecision(5, 3)
+                        .HasColumnType("numeric(5,3)");
+
+                    b.Property<decimal?>("Fg2Pct")
                         .HasColumnType("numeric");
 
                     b.Property<decimal?>("Fg3Pct")
@@ -115,23 +300,66 @@ namespace SmartScout.Infrastructure.Migrations
                     b.Property<decimal?>("FgPct")
                         .HasColumnType("numeric");
 
+                    b.Property<decimal?>("FieldGoalsAttempted")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal?>("FieldGoalsMade")
+                        .HasColumnType("numeric");
+
                     b.Property<decimal?>("FoulsDrawn")
-                        .HasPrecision(4, 1)
-                        .HasColumnType("numeric(4,1)");
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)");
+
+                    b.Property<decimal?>("FreeThrowsAttempted")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal?>("FreeThrowsMade")
+                        .HasColumnType("numeric");
 
                     b.Property<decimal?>("FtPct")
                         .HasColumnType("numeric");
 
+                    b.Property<decimal?>("GameScoreAverage")
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)");
+
                     b.Property<int>("GamesPlayed")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("GamesStarted")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("League")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasDefaultValue("NBA");
+
+                    b.Property<decimal>("LeagueDifficultyCoefficient")
+                        .ValueGeneratedOnAdd()
+                        .HasPrecision(4, 2)
+                        .HasColumnType("numeric(4,2)")
+                        .HasDefaultValue(1.00m);
+
                     b.Property<decimal?>("Minutes")
-                        .HasPrecision(4, 1)
-                        .HasColumnType("numeric(4,1)");
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)");
+
+                    b.Property<decimal?>("MinutesPlayedTotal")
+                        .HasPrecision(6, 1)
+                        .HasColumnType("numeric(6,1)");
+
+                    b.Property<decimal?>("OffensiveRebounds")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal?>("PersonalFoulsCommitted")
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)");
 
                     b.Property<decimal?>("Pir")
-                        .HasPrecision(4, 1)
-                        .HasColumnType("numeric(4,1)");
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)");
 
                     b.Property<decimal?>("PlayerEfficiencyRating")
                         .HasColumnType("numeric");
@@ -139,19 +367,34 @@ namespace SmartScout.Infrastructure.Migrations
                     b.Property<Guid>("PlayerId")
                         .HasColumnType("uuid");
 
+                    b.Property<decimal?>("PlusMinus")
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)");
+
                     b.Property<decimal?>("Points")
                         .HasColumnType("numeric");
 
                     b.Property<decimal?>("PointsPer40")
-                        .HasPrecision(4, 1)
-                        .HasColumnType("numeric(4,1)");
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)");
+
+                    b.Property<decimal?>("PtsPer36")
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)");
+
+                    b.Property<string>("RawScrapedPayload")
+                        .HasColumnType("jsonb");
+
+                    b.Property<decimal?>("RebPer36")
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)");
 
                     b.Property<decimal?>("Rebounds")
                         .HasColumnType("numeric");
 
                     b.Property<decimal?>("ReboundsPer40")
-                        .HasPrecision(4, 1)
-                        .HasColumnType("numeric(4,1)");
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)");
 
                     b.Property<int>("Season")
                         .HasColumnType("integer");
@@ -159,13 +402,40 @@ namespace SmartScout.Infrastructure.Migrations
                     b.Property<decimal?>("Steals")
                         .HasColumnType("numeric");
 
+                    b.Property<decimal?>("StlPer36")
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)");
+
+                    b.Property<string>("TeamName")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasDefaultValue("TOT");
+
+                    b.Property<decimal?>("ThreePointsAttempted")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal?>("ThreePointsMade")
+                        .HasColumnType("numeric");
+
                     b.Property<decimal?>("TotalReboundPct")
                         .HasColumnType("numeric");
+
+                    b.Property<decimal?>("TovPer36")
+                        .HasPrecision(5, 1)
+                        .HasColumnType("numeric(5,1)");
 
                     b.Property<decimal?>("TrueShootingPct")
                         .HasColumnType("numeric");
 
                     b.Property<decimal?>("Turnovers")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal?>("TwoPointsAttempted")
+                        .HasColumnType("numeric");
+
+                    b.Property<decimal?>("TwoPointsMade")
                         .HasColumnType("numeric");
 
                     b.Property<decimal?>("UsagePct")
@@ -176,7 +446,7 @@ namespace SmartScout.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("PlayerId", "Season")
+                    b.HasIndex("PlayerId", "Season", "League", "TeamName", "CompetitionPhase")
                         .IsUnique();
 
                     b.ToTable("SeasonStats");

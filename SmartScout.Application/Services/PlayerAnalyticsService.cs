@@ -4,6 +4,7 @@ using SmartScout.Domain.Entities;
 using SmartScout.Domain.Enums;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace SmartScout.Application.Services;
 
@@ -90,7 +91,7 @@ public class PlayerAnalyticsService : IPlayerAnalyticsService
         if (ast >= 6.5m)
             return PlayerArchetype.FloorGeneral;
 
-        // 7. Slashing Wing: High scoring & usage on perimeter
+        // 7. SlashingWing: High scoring & usage on perimeter
         if (pts >= 19.0m && usg >= 25.0m)
             return PlayerArchetype.SlashingWing;
 
@@ -111,7 +112,7 @@ public class PlayerAnalyticsService : IPlayerAnalyticsService
 
         double defense = Clamp100((((double)(stat.Steals ?? 0) / 2.2) * 0.5 + ((double)(stat.Blocks ?? 0) / 2.5) * 0.5) * 100);
 
-        double per = (double)(stat.PlayerEfficiencyRating ?? 15.0m);
+        double per = (double)(stat.PlayerEfficiencyRating ?? (stat.Pir ?? 15.0m));
         double bpm = (double)(stat.BoxPlusMinus ?? 0.0m);
         double ws = (double)(stat.WinShares ?? 3.0m);
         double impact = Clamp100((((per - 8.0) / 22.0) * 0.4 + ((bpm + 4.0) / 14.0) * 0.3 + (ws / 14.0) * 0.3) * 100);
@@ -170,7 +171,7 @@ public class PlayerAnalyticsService : IPlayerAnalyticsService
         {
             PlayerId = player.Id,
             FullName = $"{player.FirstName} {player.LastName}".Trim(),
-            TeamName = player.TeamName,
+            TeamName = stat.TeamName ?? player.TeamName,
             Position = player.Position,
             Season = stat.Season,
             Archetype = DetermineArchetype(stat, player.Position, player.Height).ToString(),
@@ -194,9 +195,10 @@ public class PlayerAnalyticsService : IPlayerAnalyticsService
             FoulsDrawn = stat.FoulsDrawn,
             PointsPer40 = stat.PointsPer40,
             Nationality = player.Nationality,
-            League = player.League,
+            League = !string.IsNullOrWhiteSpace(stat.League) ? stat.League : player.League,
             EuropeanCompatibilityIndex = CalculateEuropeanCompatibilityIndex(stat),
             DefensivePressureIndex = CalculateDefensivePressureIndex(stat),
+            BuyLowBounceBackIndex = CalculateBuyLowBounceBackIndex(stat, player.SeasonStats),
             RadarMetrics = CalculateRadarMetrics(stat)
         };
     }
@@ -266,6 +268,63 @@ public class PlayerAnalyticsService : IPlayerAnalyticsService
                      (motorScore * 0.20);
 
         return Math.Round(Clamp100(dpi), 1);
+    }
+
+    public double CalculateBuyLowBounceBackIndex(PlayerSeasonStat currentStat, IEnumerable<PlayerSeasonStat>? careerHistory = null)
+    {
+        // Moneyball "Uyuyan Dev / Buy-Low / Bounce-Back" Index (0-100):
+        // Identifies players who either:
+        // A) Had a high-level prior peak season (e.g., in EuroCup/NBA/EuroLeague) and are currently in a reduced role / dip, OR
+        // B) Are currently playing limited bench minutes (<= 22 MPG) but posting elite Per-40 & shooting efficiency numbers.
+
+        double curPts = (double)(currentStat.Points ?? 0m);
+        double curMin = (double)(currentStat.Minutes ?? 20m);
+        double ptsPer40 = (double)(currentStat.PointsPer40 ?? (curMin > 0 ? (decimal)(curPts / curMin * 40.0) : 0m));
+        double astPer40 = (double)(currentStat.AssistsPer40 ?? (curMin > 0 ? (decimal)((double)(currentStat.Assists ?? 0m) / curMin * 40.0) : 0m));
+        double ts = (double)(currentStat.TrueShootingPct ?? 0.54m);
+        double fg3 = (double)(currentStat.Fg3Pct ?? 0.33m);
+
+        // Signal B: Per-40 Underutilized Gem Score (high per-minute efficiency in limited/moderate playing time)
+        double per40OffenseScore = Clamp100(((ptsPer40 + (astPer40 * 1.2) - 12.0) / (30.0 - 12.0)) * 100.0);
+        double efficiencyRetainedScore = Clamp100((((ts - 0.48) / 0.16) * 0.6 + ((fg3 - 0.28) / 0.14) * 0.4) * 100.0);
+        double roleDiscountFactor = curMin <= 22.0 
+            ? Clamp100(((26.0 - curMin) / 14.0) * 100.0) 
+            : Clamp100(((32.0 - curMin) / 18.0) * 60.0);
+
+        double underutilizedGemScore = (per40OffenseScore * 0.45) + (efficiencyRetainedScore * 0.30) + (roleDiscountFactor * 0.25);
+
+        // Signal A: Multi-Season Career Peak vs Current Dip
+        double multiSeasonBounceBackScore = 0.0;
+        var historyList = (careerHistory ?? currentStat.Player?.SeasonStats)?
+            .Where(s => s.Season != currentStat.Season && s.GamesPlayed >= 5)
+            .ToList();
+
+        if (historyList != null && historyList.Any())
+        {
+            double peakPts = (double)historyList.Max(s => s.Points ?? 0m);
+            double peakPirOrPer = (double)historyList.Max(s => s.Pir ?? s.PlayerEfficiencyRating ?? 0m);
+            double peakMin = (double)historyList.Max(s => s.Minutes ?? 0m);
+
+            double ptsDrop = Math.Max(0.0, peakPts - curPts);
+            double minDrop = Math.Max(0.0, peakMin - curMin);
+
+            if (peakPts >= 10.0 || peakPirOrPer >= 11.0)
+            {
+                // 1. Proven Ceiling (40%): How good was the player at their peak?
+                double ceilingScore = Clamp100((((peakPts - 8.0) / 14.0) * 0.6 + ((peakPirOrPer - 8.0) / 14.0) * 0.4) * 100.0);
+
+                // 2. Buy-Low Discount / Role Reduction (35%): How much did their raw volume/minutes drop?
+                double discountScore = Clamp100((((ptsDrop / 8.0) * 0.6) + ((minDrop / 10.0) * 0.4)) * 100.0);
+
+                // 3. Underlying Skill Retention (25%): Per-40 output & shooting efficiency still intact
+                double skillIntactScore = (per40OffenseScore * 0.5) + (efficiencyRetainedScore * 0.5);
+
+                multiSeasonBounceBackScore = (ceilingScore * 0.40) + (discountScore * 0.35) + (skillIntactScore * 0.25);
+            }
+        }
+
+        double finalScore = Math.Max(multiSeasonBounceBackScore, underutilizedGemScore);
+        return Math.Round(Clamp100(finalScore), 1);
     }
 
     private static double Normalize(decimal? value, double min, double max)

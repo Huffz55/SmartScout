@@ -17,6 +17,7 @@ public static class ApplicationServiceRegistration
         services.AddMemoryCache();
         services.AddScoped<IPlayerAnalyticsService, PlayerAnalyticsService>();
         services.AddScoped<ISmartScoutSearchEngine, SmartScoutSearchEngine>();
+        services.AddScoped<ISleeperScoutingService, SleeperScoutingService>();
         services.AddValidatorsFromAssembly(assembly);
 
         services.AddMediatR(cfg =>

@@ -36,6 +36,7 @@ public class PlayerComparisonProfileDto
     public string League { get; set; } = string.Empty;
     public double? EuropeanCompatibilityIndex { get; set; }
     public double? DefensivePressureIndex { get; set; }
+    public double? BuyLowBounceBackIndex { get; set; }
 
     public RadarMetricsDto RadarMetrics { get; set; } = null!;
 }

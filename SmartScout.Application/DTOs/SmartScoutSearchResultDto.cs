@@ -26,7 +26,13 @@ public class SmartScoutSearchResultDto
     public decimal? Assists { get; set; }
     public decimal? Steals { get; set; }
     public decimal? Blocks { get; set; }
+    public decimal? PtsPer36 { get; set; }
+    public decimal? RebPer36 { get; set; }
+    public decimal? AstPer36 { get; set; }
     public decimal? TrueShootingPct { get; set; }
+    public decimal? EffectiveFgPct { get; set; }
+    public decimal? AssistToTurnoverRatio { get; set; }
+    public decimal? GameScoreAverage { get; set; }
     public decimal? PlayerEfficiencyRating { get; set; }
     public decimal? UsagePct { get; set; }
     public decimal? WinShares { get; set; }
@@ -36,8 +42,10 @@ public class SmartScoutSearchResultDto
     public decimal? PointsPer40 { get; set; }
     public string? Nationality { get; set; }
     public string League { get; set; } = string.Empty;
+    public decimal LeagueDifficultyCoefficient { get; set; } = 1.00m;
     public double? EuropeanCompatibilityIndex { get; set; }
     public double? DefensivePressureIndex { get; set; }
+    public double? BuyLowBounceBackIndex { get; set; }
 
     public RadarMetricsDto RadarMetrics { get; set; } = null!;
 }

@@ -4,6 +4,8 @@ namespace SmartScout.Application.UseCases.Players;
 
 public class SyncPlayersCommand : IRequest<int>
 {
-    // E.g., we could pass a cursor or page number here, but let's keep it simple
     public int Cursor { get; set; } = 0;
+    public string? League { get; set; }
+    public string? Season { get; set; }
+    public bool Force { get; set; } = false;
 }

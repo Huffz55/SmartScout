@@ -62,7 +62,7 @@ public class EuropeanBasketballAnalyticsTests
     }
 
     [Fact]
-    public void PlayerSeasonStat_Constructor_ShouldAutoCalculatePer40MinutesStats()
+    public void PlayerSeasonStat_Constructor_ShouldAutoCalculatePer40MinutesStatsAndStoreSeasonLeague()
     {
         // 18.0 PPG in 20.0 minutes => exactly 36.0 Per-40
         var stat = new PlayerSeasonStat(
@@ -80,7 +80,9 @@ public class EuropeanBasketballAnalyticsTests
             ftPct: 0.88m,
             turnovers: 1.5m,
             pir: 19.5m,
-            foulsDrawn: 4.2m
+            foulsDrawn: 4.2m,
+            league: "EuroCup",
+            teamName: "BESIKTAS FIBABANKA ISTANBUL"
         );
 
         Assert.NotNull(stat.PointsPer40);
@@ -91,6 +93,9 @@ public class EuropeanBasketballAnalyticsTests
 
         Assert.NotNull(stat.ReboundsPer40);
         Assert.Equal(8.0m, stat.ReboundsPer40.Value);
+
+        Assert.Equal("EuroCup", stat.League);
+        Assert.Equal("BESIKTAS FIBABANKA ISTANBUL", stat.TeamName);
     }
 
     [Fact]
@@ -252,5 +257,141 @@ public class EuropeanBasketballAnalyticsTests
         Assert.Single(results);
         Assert.Equal(turkPlayer.Id, results[0].PlayerId);
         Assert.Contains(results[0].MatchReasons, r => r.Contains("Turkish National"));
+    }
+
+    [Fact]
+    public void SmartScoutSearchEngine_BuyLowSleeperPrompt_ShouldIdentifyFormerPeakPlayerInReducedRole()
+    {
+        var engine = new SmartScoutSearchEngine(_analyticsService);
+
+        // Player 1: "Sleeping Giant" — Star in 2024 EuroCup (17.5 PPG, 19.0 PIR), now buried on a 2026 EuroLeague bench (13.0 MPG, 6.8 PPG, but 20.9 PTS/40 & 40% 3P)
+        var sleeper = new Player(301, "Trevion", "Sleeper", "G", "6-3", 195, "Real Madrid", "EuroLeague");
+        var peak2024 = new PlayerSeasonStat(
+            playerId: sleeper.Id,
+            season: 2024,
+            gamesPlayed: 20,
+            minutes: 28.0m,
+            points: 17.5m,
+            assists: 5.2m,
+            rebounds: 3.5m,
+            steals: 1.4m,
+            blocks: 0.2m,
+            fgPct: 0.48m,
+            fg3Pct: 0.39m,
+            ftPct: 0.85m,
+            turnovers: 2.0m,
+            trueShootingPct: 0.61m,
+            pir: 19.0m,
+            foulsDrawn: 4.5m,
+            league: "EuroCup",
+            teamName: "Bourg"
+        );
+        var dip2026 = new PlayerSeasonStat(
+            playerId: sleeper.Id,
+            season: 2026,
+            gamesPlayed: 18,
+            minutes: 13.0m,
+            points: 6.8m,
+            assists: 2.4m,
+            rebounds: 1.5m,
+            steals: 0.8m,
+            blocks: 0.1m,
+            fgPct: 0.47m,
+            fg3Pct: 0.40m,
+            ftPct: 0.86m,
+            turnovers: 1.0m,
+            trueShootingPct: 0.60m,
+            pir: 7.5m,
+            foulsDrawn: 2.0m,
+            league: "EuroLeague",
+            teamName: "Real Madrid"
+        );
+        typeof(PlayerSeasonStat).GetProperty("Player")!.SetValue(peak2024, sleeper);
+        typeof(PlayerSeasonStat).GetProperty("Player")!.SetValue(dip2026, sleeper);
+        sleeper.AddSeasonStat(peak2024);
+        sleeper.AddSeasonStat(dip2026);
+
+        // Player 2: Mediocre low-efficiency player in both 2024 and 2026
+        var mediocre = new Player(302, "Average", "Bench", "G", "6-2", 190, "Other Team", "EuroCup");
+        var med2024 = new PlayerSeasonStat(
+            playerId: mediocre.Id,
+            season: 2024,
+            gamesPlayed: 20,
+            minutes: 20.0m,
+            points: 5.0m,
+            assists: 1.5m,
+            rebounds: 1.5m,
+            steals: 0.4m,
+            blocks: 0.0m,
+            fgPct: 0.36m,
+            fg3Pct: 0.27m,
+            ftPct: 0.68m,
+            turnovers: 2.2m,
+            trueShootingPct: 0.45m,
+            pir: 3.5m,
+            foulsDrawn: 1.0m,
+            league: "EuroCup",
+            teamName: "Other Team"
+        );
+        var med2026 = new PlayerSeasonStat(
+            playerId: mediocre.Id,
+            season: 2026,
+            gamesPlayed: 20,
+            minutes: 22.0m,
+            points: 5.5m,
+            assists: 1.8m,
+            rebounds: 1.8m,
+            steals: 0.5m,
+            blocks: 0.1m,
+            fgPct: 0.37m,
+            fg3Pct: 0.28m,
+            ftPct: 0.70m,
+            turnovers: 2.1m,
+            trueShootingPct: 0.46m,
+            pir: 4.0m,
+            foulsDrawn: 1.2m,
+            league: "EuroCup",
+            teamName: "Other Team"
+        );
+        typeof(PlayerSeasonStat).GetProperty("Player")!.SetValue(med2024, mediocre);
+        typeof(PlayerSeasonStat).GetProperty("Player")!.SetValue(med2026, mediocre);
+        mediocre.AddSeasonStat(med2024);
+        mediocre.AddSeasonStat(med2026);
+
+        var results = engine.Search("gecmiste iyi olup parlayabilecek uyuyan dev buy low guard", new[] { peak2024, dip2026, med2024, med2026 });
+
+        Assert.NotEmpty(results);
+        Assert.Equal(sleeper.Id, results[0].PlayerId);
+        Assert.Equal(2026, results[0].Season);
+        Assert.Equal("EuroLeague", results[0].League);
+        Assert.True(results[0].BuyLowBounceBackIndex >= 70.0);
+        Assert.Contains(results[0].MatchReasons, r => r.Contains("Uyuyan Dev / Buy-Low Target"));
+    }
+
+    [Fact]
+    public void ScraperOptions_EuroThrottling_ShouldComplyWithSafeRateLimits()
+    {
+        var options = new SmartScout.Infrastructure.Options.ScraperOptions();
+
+        // 1. Max concurrent requests should be 2 or 3 (never 6+)
+        Assert.InRange(options.EuroMaxConcurrentRequests, 1, 3);
+
+        // 2. Delay between waves should be at least 1000ms - 1500ms
+        Assert.InRange(options.EuroDelayBetweenWavesMs, 1000, 2000);
+    }
+
+    [Fact]
+    public void PollyStandardResilienceOptions_AttemptTimeoutAndSamplingDuration_ShouldComplyWithDoubleRule()
+    {
+        var options = new Microsoft.Extensions.Http.Resilience.HttpStandardResilienceOptions();
+        options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(10);
+        options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(60);
+        options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(60);
+
+        // CircuitBreaker SamplingDuration (60s) must be at least double AttemptTimeout (10s)
+        Assert.True(options.CircuitBreaker.SamplingDuration >= options.AttemptTimeout.Timeout * 2);
+        Assert.Equal(TimeSpan.FromSeconds(10), options.AttemptTimeout.Timeout);
+        Assert.Equal(TimeSpan.FromSeconds(60), options.CircuitBreaker.SamplingDuration);
+        Assert.Equal(TimeSpan.FromSeconds(60), options.TotalRequestTimeout.Timeout);
     }
 }

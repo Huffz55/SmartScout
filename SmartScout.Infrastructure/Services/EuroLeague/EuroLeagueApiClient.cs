@@ -31,6 +31,11 @@ public class EuroLeagueApiClient
 
             if (!response.IsSuccessStatusCode)
             {
+                if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                {
+                    _logger.LogWarning("HTTP 429 Too Many Requests received from EuroLeague API for game {GameCode}, season {SeasonCode}. Applying cooldown delay...", gameCode, seasonCode);
+                    await Task.Delay(3000, cancellationToken);
+                }
                 return null;
             }
 
@@ -53,6 +58,11 @@ public class EuroLeagueApiClient
 
             if (!response.IsSuccessStatusCode)
             {
+                if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                {
+                    _logger.LogWarning("HTTP 429 Too Many Requests received from EuroLeague API for game {GameCode}, season {SeasonCode}. Applying cooldown delay...", gameCode, seasonCode);
+                    await Task.Delay(3000, cancellationToken);
+                }
                 return null;
             }
 

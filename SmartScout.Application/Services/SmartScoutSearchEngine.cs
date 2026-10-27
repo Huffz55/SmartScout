@@ -26,7 +26,24 @@ public class SmartScoutSearchEngine : ISmartScoutSearchEngine
         if (string.IsNullOrWhiteSpace(prompt))
             return new List<SmartScoutSearchResultDto>();
 
+        var candidateList = candidateStats.ToList();
+        if (!candidateList.Any())
+            return new List<SmartScoutSearchResultDto>();
+
         string cleanPrompt = prompt.ToLowerInvariant();
+
+        // Group career history by PlayerId so multi-season trajectory & buy-low bounce-back can be evaluated
+        var careerByPlayerId = candidateList
+            .GroupBy(s => s.PlayerId)
+            .ToDictionary(
+                g => g.Key,
+                g =>
+                {
+                    var navStats = g.First().Player?.SeasonStats;
+                    return (IReadOnlyList<PlayerSeasonStat>)((navStats != null && navStats.Count > g.Count())
+                        ? navStats.OrderBy(x => x.Season).ToList()
+                        : g.OrderBy(x => x.Season).ToList());
+                });
 
         // 1. Extract Target Archetypes
         var targetArchetype = DetectArchetype(cleanPrompt);
@@ -43,12 +60,17 @@ public class SmartScoutSearchEngine : ISmartScoutSearchEngine
         bool wantsDefense = cleanPrompt.Contains("defen") || cleanPrompt.Contains("lockdown") || cleanPrompt.Contains("steal") || cleanPrompt.Contains("block") || cleanPrompt.Contains("rim protect");
         bool wantsHighImpact = cleanPrompt.Contains("impact") || cleanPrompt.Contains("mvp") || cleanPrompt.Contains("star") || cleanPrompt.Contains("elite") || cleanPrompt.Contains("all-star");
 
-        // European & Beşiktaş Tactical Intent
+        // European, Beşiktaş & Moneyball Sleeper/Bounce-Back Intent
         bool wantsBesiktasStyle = cleanPrompt.Contains("besiktas") || cleanPrompt.Contains("beşiktaş") || cleanPrompt.Contains("bjk") ||
                                   cleanPrompt.Contains("alimpijevic") || cleanPrompt.Contains("alimpijević") || cleanPrompt.Contains("tam saha pres") ||
                                   cleanPrompt.Contains("ball pressure") || cleanPrompt.Contains("press") || cleanPrompt.Contains("disrupt");
         bool wantsEuropeanFit = cleanPrompt.Contains("euro") || cleanPrompt.Contains("avrupa") || cleanPrompt.Contains("eci") ||
                                cleanPrompt.Contains("half court") || cleanPrompt.Contains("spacing") || cleanPrompt.Contains("fiba");
+        bool wantsBuyLowSleeper = cleanPrompt.Contains("uyuyan") || cleanPrompt.Contains("buy low") || cleanPrompt.Contains("buy-low") ||
+                                  cleanPrompt.Contains("bounce back") || cleanPrompt.Contains("bounce-back") || cleanPrompt.Contains("parlaya") ||
+                                  cleanPrompt.Contains("patlama") || cleanPrompt.Contains("sleeper") || cleanPrompt.Contains("undervalued") ||
+                                  cleanPrompt.Contains("firsat") || cleanPrompt.Contains("fırsat") || cleanPrompt.Contains("potansiyel") ||
+                                  cleanPrompt.Contains("eskiden") || cleanPrompt.Contains("gecmiste") || cleanPrompt.Contains("geçmişte");
         bool wantsPir = cleanPrompt.Contains("pir") || cleanPrompt.Contains("valuation") || cleanPrompt.Contains("verimlilik");
         bool wantsFoulsDrawn = cleanPrompt.Contains("foul") || cleanPrompt.Contains("faul") || cleanPrompt.Contains("contact");
         bool wantsTurkish = cleanPrompt.Contains("turk") || cleanPrompt.Contains("türk") || cleanPrompt.Contains("yerli");
@@ -66,13 +88,25 @@ public class SmartScoutSearchEngine : ISmartScoutSearchEngine
 
         var matchedResults = new List<SmartScoutSearchResultDto>();
 
-        foreach (var stat in candidateStats)
+        foreach (var stat in candidateList)
         {
             var player = stat.Player;
             if (player == null) continue;
 
             // Strict Filter 1: Games played minimum sample
-            if (stat.GamesPlayed < 10) continue;
+            if (stat.GamesPlayed < 3) continue;
+
+            careerByPlayerId.TryGetValue(stat.PlayerId, out var careerHistory);
+
+            // When searching for Buy-Low / Bounce-Back sleepers across multiple seasons, evaluate the player's latest season against their prior peak
+            if (wantsBuyLowSleeper && careerHistory != null && careerHistory.Count > 1)
+            {
+                int latestSeason = careerHistory.Max(s => s.Season);
+                if (stat.Season != latestSeason) continue;
+            }
+
+            string statLeague = !string.IsNullOrWhiteSpace(stat.League) ? stat.League : player.League;
+            string? statTeam = !string.IsNullOrWhiteSpace(stat.TeamName) ? stat.TeamName : player.TeamName;
 
             // Strict Filter 2: Explicit position conflict
             if (targetPosition != null && !string.IsNullOrEmpty(player.Position))
@@ -83,9 +117,9 @@ public class SmartScoutSearchEngine : ISmartScoutSearchEngine
             }
 
             // Strict Filter 3: Competition / League restrictions
-            if (wantsEuroLeagueOnly && !string.Equals(player.League, "EuroLeague", StringComparison.OrdinalIgnoreCase)) continue;
-            if (wantsEuroCupOnly && !string.Equals(player.League, "EuroCup", StringComparison.OrdinalIgnoreCase)) continue;
-            if (wantsNbaOnly && !string.Equals(player.League, "NBA", StringComparison.OrdinalIgnoreCase)) continue;
+            if (wantsEuroLeagueOnly && !string.Equals(statLeague, "EuroLeague", StringComparison.OrdinalIgnoreCase)) continue;
+            if (wantsEuroCupOnly && !string.Equals(statLeague, "EuroCup", StringComparison.OrdinalIgnoreCase)) continue;
+            if (wantsNbaOnly && !string.Equals(statLeague, "NBA", StringComparison.OrdinalIgnoreCase)) continue;
 
             // Strict Filter 4: Domestic Turkish Passport
             if (wantsTurkish)
@@ -106,6 +140,7 @@ public class SmartScoutSearchEngine : ISmartScoutSearchEngine
             var radar = _analyticsService.CalculateRadarMetrics(stat);
             double eci = _analyticsService.CalculateEuropeanCompatibilityIndex(stat);
             double dpi = _analyticsService.CalculateDefensivePressureIndex(stat);
+            double buyLow = _analyticsService.CalculateBuyLowBounceBackIndex(stat, careerHistory);
 
             double score = 40.0;
             var reasons = new List<string>();
@@ -120,7 +155,6 @@ public class SmartScoutSearchEngine : ISmartScoutSearchEngine
                 }
                 else
                 {
-                    // Partial mismatch penalty
                     score -= 15.0;
                 }
             }
@@ -199,6 +233,28 @@ public class SmartScoutSearchEngine : ISmartScoutSearchEngine
                     reasons.Add($"European Compatibility: ECI {eci:F1}/100 (Tactical IQ, Spacing & Low Turnovers)");
             }
 
+            // Moneyball Sleeper / Buy-Low / Bounce-Back Factor
+            if (wantsBuyLowSleeper)
+            {
+                double sleeperBonus = Math.Min(40.0, (buyLow / 100.0) * 40.0);
+                score += sleeperBonus;
+
+                var priorPeak = careerHistory?
+                    .Where(s => s.Season != stat.Season)
+                    .OrderByDescending(s => (s.Points ?? 0m) + (s.Pir ?? s.PlayerEfficiencyRating ?? 0m) * 0.5m)
+                    .FirstOrDefault();
+
+                if (priorPeak != null && (priorPeak.Points ?? 0m) > (stat.Points ?? 0m) + 1.5m)
+                {
+                    string peakLeague = !string.IsNullOrWhiteSpace(priorPeak.League) ? priorPeak.League : statLeague;
+                    reasons.Add($"Uyuyan Dev / Buy-Low Target (Index: {buyLow:F1}/100): Peak in {priorPeak.Season} ({priorPeak.Points:F1} PPG in {peakLeague}) → Currently {stat.Points:F1} PPG in {stat.Minutes:F1} MIN ({stat.PointsPer40:F1} PTS/40)");
+                }
+                else if (buyLow >= 60.0)
+                {
+                    reasons.Add($"Per-40 Breakout Gem (Index: {buyLow:F1}/100): Producing {stat.PointsPer40:F1} PTS/40 in {stat.Minutes:F1} MPG");
+                }
+            }
+
             // Valuation / Performance Index Rating (PIR)
             if (wantsPir)
             {
@@ -236,7 +292,7 @@ public class SmartScoutSearchEngine : ISmartScoutSearchEngine
 
             // If no specific metric was specified, boost by overall impact
             if (!wantsScoring && !wantsShooting && !wantsEfficiency && !wantsPlaymaking && !wantsRebounding && 
-                !wantsDefense && !wantsBesiktasStyle && !wantsEuropeanFit && !wantsPir && !targetArchetype.HasValue)
+                !wantsDefense && !wantsBesiktasStyle && !wantsEuropeanFit && !wantsBuyLowSleeper && !wantsPir && !targetArchetype.HasValue)
             {
                 score += (radar.OverallImpact / 100.0) * 30.0;
                 reasons.Add($"Overall Production Index: {radar.OverallImpact:F1}/100");
@@ -249,7 +305,7 @@ public class SmartScoutSearchEngine : ISmartScoutSearchEngine
                 PlayerId = player.Id,
                 FirstName = player.FirstName,
                 LastName = player.LastName,
-                TeamName = player.TeamName,
+                TeamName = statTeam,
                 Position = player.Position,
                 Season = stat.Season,
                 Archetype = archetype.ToString(),
@@ -260,7 +316,13 @@ public class SmartScoutSearchEngine : ISmartScoutSearchEngine
                 Assists = stat.Assists,
                 Steals = stat.Steals,
                 Blocks = stat.Blocks,
+                PtsPer36 = stat.PtsPer36,
+                RebPer36 = stat.RebPer36,
+                AstPer36 = stat.AstPer36,
                 TrueShootingPct = stat.TrueShootingPct,
+                EffectiveFgPct = stat.EffectiveFgPct,
+                AssistToTurnoverRatio = stat.AssistToTurnoverRatio,
+                GameScoreAverage = stat.GameScoreAverage,
                 PlayerEfficiencyRating = stat.PlayerEfficiencyRating,
                 UsagePct = stat.UsagePct,
                 WinShares = stat.WinShares,
@@ -269,14 +331,19 @@ public class SmartScoutSearchEngine : ISmartScoutSearchEngine
                 FoulsDrawn = stat.FoulsDrawn,
                 PointsPer40 = stat.PointsPer40,
                 Nationality = player.Nationality,
-                League = player.League,
+                League = statLeague,
+                LeagueDifficultyCoefficient = stat.LeagueDifficultyCoefficient,
                 EuropeanCompatibilityIndex = eci,
                 DefensivePressureIndex = dpi,
+                BuyLowBounceBackIndex = buyLow,
                 RadarMetrics = radar
             });
         }
 
+        // Deduplicate by PlayerId (keep each player's highest-scoring season profile)
         return matchedResults
+            .GroupBy(r => r.PlayerId)
+            .Select(g => g.OrderByDescending(r => r.FitScore).ThenByDescending(r => r.Season).First())
             .OrderByDescending(r => r.FitScore)
             .Take(top)
             .ToList();

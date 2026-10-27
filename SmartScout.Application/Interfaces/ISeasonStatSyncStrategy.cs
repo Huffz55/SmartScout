@@ -7,5 +7,8 @@ namespace SmartScout.Application.Interfaces;
 
 public interface ISeasonStatSyncStrategy
 {
-    IAsyncEnumerable<SeasonStatSyncBatchResult> FetchSeasonStatsAsync(List<Player> players, CancellationToken cancellationToken);
+    IAsyncEnumerable<SeasonStatSyncBatchResult> FetchSeasonStatsAsync(
+        List<Player> players, 
+        CancellationToken cancellationToken,
+        SyncFilterContext? filter = null);
 }

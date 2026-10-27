@@ -1,0 +1,1212 @@
+<!DOCTYPE html>
+<html lang="tr" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartScout | Profesyonel Basketbol Keşif & Analitik Platformu</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏀</text></svg>">
+  
+  <!-- Tailwind CSS & Fonts -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  
+  <!-- Lucide Icons & Chart.js -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Outfit', 'sans-serif'],
+            display: ['Space Grotesk', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              400: '#818cf8',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            },
+            accent: {
+              emerald: '#10b981',
+              amber: '#f59e0b',
+              cyan: '#06b6d4',
+              rose: '#f43f5e'
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      background: radial-gradient(circle at 50% 0%, #1e1b4b 0%, #090d16 65%, #030712 100%);
+      min-height: 100vh;
+      color: #f3f4f6;
+    }
+    .glass-card {
+      background: rgba(15, 23, 42, 0.72);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .glass-card-hover {
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .glass-card-hover:hover {
+      transform: translateY(-3px);
+      border-color: rgba(99, 102, 241, 0.35);
+      box-shadow: 0 12px 28px -8px rgba(99, 102, 241, 0.18);
+    }
+    .glow-score {
+      box-shadow: 0 0 18px rgba(16, 185, 129, 0.25);
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(99, 102, 241, 0.4);
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(99, 102, 241, 0.7);
+    }
+  </style>
+</head>
+<body class="font-sans antialiased text-slate-100 flex flex-col min-h-screen">
+
+  <!-- ================= TOP HEADER ================= -->
+  <header class="sticky top-0 z-40 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-md">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      
+      <!-- Brand -->
+      <div class="flex items-center space-x-3 cursor-pointer" onclick="switchTab('sleepers')">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-brand-600 via-indigo-500 to-accent-emerald flex items-center justify-center shadow-lg shadow-indigo-500/25">
+          <i data-lucide="crosshair" class="w-5 h-5 text-white"></i>
+        </div>
+        <div>
+          <span class="font-display font-bold text-xl tracking-tight text-white">SMARTSCOUT</span>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="hidden md:flex items-center space-x-1 bg-slate-900/80 p-1.5 rounded-xl border border-slate-800">
+        <button id="nav-sleepers" onclick="switchTab('sleepers')" class="tab-btn px-4 py-1.5 rounded-lg text-sm font-semibold flex items-center space-x-2 transition bg-brand-600 text-white shadow-sm">
+          <i data-lucide="sparkles" class="w-4 h-4"></i>
+          <span>Sleepers</span>
+        </button>
+        <button id="nav-search" onclick="switchTab('search')" class="tab-btn px-4 py-1.5 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition flex items-center space-x-2">
+          <i data-lucide="brain-circuit" class="w-4 h-4"></i>
+          <span>AI Akıllı Arama</span>
+        </button>
+        <button id="nav-players" onclick="switchTab('players')" class="tab-btn px-4 py-1.5 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition flex items-center space-x-2">
+          <i data-lucide="users" class="w-4 h-4"></i>
+          <span>Oyuncu Havuzu</span>
+        </button>
+        <button id="nav-sync" onclick="switchTab('sync')" class="tab-btn px-4 py-1.5 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition flex items-center space-x-2">
+          <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+          <span>Veri Eşitleme</span>
+        </button>
+      </nav>
+
+      <!-- Clean Header Spacer -->
+      <div class="hidden sm:block"></div>
+
+    </div>
+  </header>
+
+  <!-- ================= MAIN CONTENT CONTAINER ================= -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+    <!-- ================= TAB 1: GİZLİ CEVHERLER (SLEEPERS) ================= -->
+    <section id="tab-sleepers" class="tab-content space-y-6">
+      
+      <!-- Filter Bar -->
+      <div class="glass-card rounded-2xl p-4 sm:p-5 shadow-lg">
+        <div class="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
+          
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1">
+            
+            <!-- Category Filter -->
+            <div>
+              <label class="block text-xs font-semibold text-slate-400 mb-1 flex items-center space-x-1">
+                <i data-lucide="tag" class="w-3.5 h-3.5"></i>
+                <span>Keşif Kategorisi</span>
+              </label>
+              <select id="sleeper-category" onchange="fetchSleepers()" class="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500">
+                <option value="">🌟 Tüm Kategoriler</option>
+                <option value="LowMinute">⏱️ Low-Minute Monster</option>
+                <option value="ForgottenPeak">📉 Forgotten Peak</option>
+                <option value="StepUpCandidate">🚀 Step-Up Star</option>
+              </select>
+            </div>
+
+            <!-- League Filter -->
+            <div>
+              <label class="block text-xs font-semibold text-slate-400 mb-1 flex items-center space-x-1">
+                <i data-lucide="trophy" class="w-3.5 h-3.5"></i>
+                <span>Lig Filtresi</span>
+              </label>
+              <select id="sleeper-league" onchange="fetchSleepers()" class="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500">
+                <option value="">🌍 Tüm Ligler (14 Lig)</option>
+                <option value="NBA">🇺🇸 NBA</option>
+                <option value="EuroLeague">🇪🇺 EuroLeague</option>
+                <option value="EuroCup">🇪🇺 EuroCup</option>
+                <option value="BSL">🇹🇷 BSL (Türkiye)</option>
+                <option value="ACB">🇪🇸 ACB (İspanya)</option>
+                <option value="GLeague">🇺🇸 NBA G-League</option>
+                <option value="ABA">Adriatic ABA</option>
+                <option value="LegaA">🇮🇹 LegaA (İtalya)</option>
+                <option value="LNB">🇫🇷 LNB (Fransa)</option>
+                <option value="GBL">🇬🇷 GBL (Yunanistan)</option>
+                <option value="BBL">🇩🇪 BBL (Almanya)</option>
+                <option value="BCL">🏀 FIBA Champions League</option>
+                <option value="LKL">🇱🇹 LKL (Litvanya)</option>
+                <option value="VTB">🇷🇺 VTB United</option>
+              </select>
+            </div>
+
+            <!-- Season Filter -->
+            <div>
+              <label class="block text-xs font-semibold text-slate-400 mb-1 flex items-center space-x-1">
+                <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
+                <span>Sezon</span>
+              </label>
+              <select id="sleeper-season" onchange="fetchSleepers()" class="w-full bg-slate-900 border border-slate-700/80 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500">
+                <option value="2024" selected>2023-2024 Sezonu (Referans Zirve)</option>
+                <option value="2025">2024-2025 Sezonu</option>
+                <option value="2023">2022-2023 Sezonu</option>
+                <option value="2022">2021-2022 Sezonu</option>
+                <option value="2021">2020-2021 Sezonu</option>
+                <option value="2020">2019-2020 Sezonu</option>
+              </select>
+            </div>
+
+          </div>
+
+          <!-- Fetch Button -->
+          <div class="flex items-end">
+            <button onclick="fetchSleepers()" class="w-full lg:w-auto px-5 py-2.5 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white font-semibold text-sm flex items-center justify-center space-x-2 shadow-md shadow-indigo-600/30 transition">
+              <i data-lucide="search" class="w-4 h-4"></i>
+              <span>Oyuncuları Tara</span>
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Live Results Header -->
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-xl font-display font-bold text-white flex items-center space-x-2">
+            <span>Sleepers</span>
+            <span id="sleeper-count-badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">0 Oyuncu</span>
+          </h2>
+          <p class="text-xs text-slate-400 mt-0.5">Dakika başına verimlilik, True Shooting ve lig katsayısına göre sıralanmış adaylar</p>
+        </div>
+      </div>
+
+      <!-- Sleepers Grid -->
+      <div id="sleepers-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <!-- Rendered dynamically via JavaScript -->
+      </div>
+
+      <!-- Loading State -->
+      <div id="sleepers-loading" class="hidden py-16 text-center">
+        <div class="inline-block animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-brand-500"></div>
+        <p class="mt-3 text-sm text-slate-400 font-medium">14 ligdeki oyuncular matematiksel formüllerle taranıyor...</p>
+      </div>
+
+    </section>
+
+    <!-- ================= TAB 2: AI AKILLI ARAMA (SMART SEARCH) ================= -->
+    <section id="tab-search" class="tab-content hidden space-y-6">
+      
+      <!-- Hero Prompt Box -->
+      <div class="glass-card rounded-2xl p-6 sm:p-8 text-center max-w-4xl mx-auto border-indigo-500/20 shadow-xl shadow-indigo-950/40">
+        <div class="inline-flex p-3 rounded-2xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 mb-3">
+          <i data-lucide="sparkles" class="w-6 h-6"></i>
+        </div>
+        <h2 class="text-2xl sm:text-3xl font-display font-bold text-white">Doğal Dil ile Oyuncu Arama Motoru</h2>
+        <p class="text-sm text-slate-300 mt-2 max-w-xl mx-auto">
+          İstediğin oyuncu profilini günlük Türkçe veya İngilizce ile yaz. Sistem antrenör tarzını, lig şartlarını ve istatistik eşiklerini otomatik anlar.
+        </p>
+
+        <!-- Search Input -->
+        <div class="mt-6 flex flex-col sm:flex-row gap-2 max-w-2xl mx-auto">
+          <div class="relative flex-1">
+            <i data-lucide="search" class="w-5 h-5 absolute left-3.5 top-3.5 text-slate-400"></i>
+            <input type="text" id="smart-prompt-input" 
+                   placeholder="Örn: Beşiktaş için tam saha pres guardı top çalan, 20+ sayı atan şutör..." 
+                   onkeydown="if(event.key==='Enter') executeSmartSearch()"
+                   class="w-full bg-slate-900/90 border border-slate-700 rounded-xl pl-11 pr-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition shadow-inner">
+          </div>
+          <button onclick="executeSmartSearch()" class="px-6 py-3 rounded-xl bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white font-semibold text-sm flex items-center justify-center space-x-2 shadow-lg shadow-indigo-600/30 transition">
+            <i data-lucide="sparkles" class="w-4 h-4"></i>
+            <span>Analiz Et</span>
+          </button>
+        </div>
+
+        <!-- Sample Prompt Buttons -->
+        <div class="mt-4 flex flex-wrap items-center justify-center gap-2 text-xs">
+          <span class="text-slate-400 font-medium">Örnek Aramalar:</span>
+          <button onclick="applySamplePrompt('Besiktas tam saha pres guardi top calan')" class="px-3 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700/60 transition">
+            🦅 Beşiktaş Pres Guardı
+          </button>
+          <button onclick="applySamplePrompt('20+ pts sharpshooter 3pt spacing')" class="px-3 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700/60 transition">
+            🎯 20+ Sayı Keskin Şutör
+          </button>
+          <button onclick="applySamplePrompt('uyuyan dev buy low bounce back candidate')" class="px-3 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700/60 transition">
+            📉 Uyuyan Dev (Bounce-Back)
+          </button>
+          <button onclick="applySamplePrompt('turk yerli firsat oyuncusu')" class="px-3 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700/60 transition">
+            🇹🇷 Yerli Fırsat Adayı
+          </button>
+          <button onclick="applySamplePrompt('nba low minute stretch big point center')" class="px-3 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700/60 transition">
+            🏀 NBA Stretch Big / Center
+          </button>
+        </div>
+
+      </div>
+
+      <!-- Smart Search Results Header -->
+      <div id="search-results-header" class="hidden flex items-center justify-between">
+        <div>
+          <h3 class="text-xl font-display font-bold text-white flex items-center space-x-2">
+            <span>Uyumlu Oyuncular</span>
+            <span id="search-count-badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">0 Aday</span>
+          </h3>
+          <p class="text-xs text-slate-400 mt-0.5">Avrupa Uyumluluk Endeksi (ECI) ve Savunma Baskı Endeksi (DPI) ile puanlanmış sonuçlar</p>
+        </div>
+      </div>
+
+      <!-- Smart Search Results Grid -->
+      <div id="search-results-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <!-- Rendered dynamically via JavaScript -->
+      </div>
+
+      <!-- Loading State -->
+      <div id="search-loading" class="hidden py-16 text-center">
+        <div class="inline-block animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-brand-500"></div>
+        <p class="mt-3 text-sm text-slate-400 font-medium">Prompt analiz ediliyor ve veritabanı taranıyor...</p>
+      </div>
+
+    </section>
+
+    <!-- ================= TAB 3: OYUNCU HAVUZU (PLAYER DIRECTORY) ================= -->
+    <section id="tab-players" class="tab-content hidden space-y-6">
+      <div class="glass-card rounded-2xl p-5 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div class="relative w-full sm:w-96">
+          <i data-lucide="search" class="w-4 h-4 absolute left-3 top-3 text-slate-400"></i>
+          <input type="text" id="directory-search-input" onkeyup="debounceDirectorySearch()" placeholder="Oyuncu adı veya takım ara..." class="w-full bg-slate-900 border border-slate-700 rounded-xl pl-9 pr-3 py-2 text-sm text-white focus:outline-none focus:border-brand-500">
+        </div>
+        <div class="text-xs text-slate-400 font-medium">
+          Toplam 7.000+ Oyuncu Kayıtlı
+        </div>
+      </div>
+
+      <div class="glass-card rounded-2xl overflow-hidden shadow-lg">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm text-slate-300">
+            <thead class="bg-slate-900/90 text-xs uppercase text-slate-400 font-semibold border-b border-slate-800">
+              <tr>
+                <th class="py-3 px-4">Oyuncu</th>
+                <th class="py-3 px-4">Pozisyon</th>
+                <th class="py-3 px-4">Takım</th>
+                <th class="py-3 px-4">Lig</th>
+                <th class="py-3 px-4">Milliyet</th>
+                <th class="py-3 px-4 text-right">İşlem</th>
+              </tr>
+            </thead>
+            <tbody id="directory-table-body" class="divide-y divide-slate-800/60">
+              <!-- Rendered dynamically -->
+            </tbody>
+          </table>
+        </div>
+        <!-- Pagination -->
+        <div class="p-4 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+          <span id="directory-page-info">Sayfa 1 / 1</span>
+          <div class="flex space-x-2">
+            <button onclick="prevDirectoryPage()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white transition">Önceki</button>
+            <button onclick="nextDirectoryPage()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white transition">Sonraki</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= TAB 4: VERİ EŞİTLEME (SYNC PANEL) ================= -->
+    <section id="tab-sync" class="tab-content hidden space-y-6">
+      <div class="glass-card rounded-2xl p-6 shadow-xl max-w-4xl mx-auto">
+        <h3 class="text-xl font-display font-bold text-white flex items-center space-x-2">
+          <i data-lucide="refresh-cw" class="w-5 h-5 text-indigo-400"></i>
+          <span>Lig Veri Senkronizasyon Merkezi</span>
+        </h3>
+        <p class="text-sm text-slate-300 mt-1">
+          Tüm ligleri tek tek veya tek komutla ("ALL") 3-4 saniyede en güncel maç sayıları, şut dağılımları ve verimlilik metrikleriyle eşitleyin.
+        </p>
+
+        <!-- Quick Action Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mt-6">
+          
+          <div class="p-4 rounded-xl bg-slate-900/90 border border-slate-800 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-white">🇺🇸 NBA</span>
+                <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">3 Saniyede Hızlı</span>
+              </div>
+              <p class="text-xs text-slate-400 mt-2">B-Ref resmi lig tablosundan tüm rotasyon ve şut dağılımı</p>
+            </div>
+            <button onclick="triggerSync('NBA', '2024')" class="mt-4 w-full py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold text-xs transition flex items-center justify-center space-x-1">
+              <i data-lucide="play" class="w-3.5 h-3.5"></i>
+              <span>2024 Sezonunu Eşitle</span>
+            </button>
+          </div>
+
+          <div class="p-4 rounded-xl bg-slate-900/90 border border-slate-800 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-white">🇪🇺 EuroLeague</span>
+                <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Aktif</span>
+              </div>
+              <p class="text-xs text-slate-400 mt-2">Avrupa'nın 1 numaralı ligi, PIR ve şut verimliliği</p>
+            </div>
+            <button onclick="triggerSync('EuroLeague', '2024')" class="mt-4 w-full py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold text-xs transition flex items-center justify-center space-x-1">
+              <i data-lucide="play" class="w-3.5 h-3.5"></i>
+              <span>2024 Sezonunu Eşitle</span>
+            </button>
+          </div>
+
+          <div class="p-4 rounded-xl bg-slate-900/90 border border-slate-800 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between">
+                <span class="font-bold text-white">🇹🇷 BSL (Türkiye)</span>
+                <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Aktif</span>
+              </div>
+              <p class="text-xs text-slate-400 mt-2">Fenerbahçe, Efes, Beşiktaş ve tüm yerel kulüpler</p>
+            </div>
+            <button onclick="triggerSync('BSL', '2024')" class="mt-4 w-full py-2 rounded-lg bg-brand-600 hover:bg-brand-500 text-white font-semibold text-xs transition flex items-center justify-center space-x-1">
+              <i data-lucide="play" class="w-3.5 h-3.5"></i>
+              <span>2024 Sezonunu Eşitle</span>
+            </button>
+          </div>
+
+        </div>
+
+        <!-- Sync Output Console -->
+        <div class="mt-6">
+          <label class="block text-xs font-semibold text-slate-400 mb-1">Senkronizasyon Logu</label>
+          <div id="sync-console" class="w-full h-36 bg-black/60 border border-slate-800 rounded-xl p-3 font-mono text-xs text-emerald-400 overflow-y-auto">
+            [Sistem]: Hazır. Bir lig seçerek veri senkronizasyonunu başlatabilirsiniz.
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ================= OYUNCU DETAY & RADAR SLIDE-OVER MODAL ================= -->
+  <div id="player-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+    <div class="glass-card rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden shadow-2xl border-indigo-500/30">
+      
+      <!-- Modal Header -->
+      <div class="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+        <div class="flex items-center space-x-3">
+          <div class="w-12 h-12 rounded-xl bg-gradient-to-tr from-brand-600 to-accent-emerald flex items-center justify-center text-xl font-bold text-white shadow-md">
+            <span id="modal-initials">--</span>
+          </div>
+          <div>
+            <div class="flex items-center space-x-2">
+              <h3 id="modal-name" class="font-display font-bold text-xl text-white">Oyuncu Adı</h3>
+              <span id="modal-pos" class="px-2 py-0.5 rounded-full text-xs font-bold bg-indigo-500/20 text-indigo-300">POS</span>
+            </div>
+            <p class="text-xs text-slate-400 mt-0.5">
+              <span id="modal-team">Takım</span> • <span id="modal-league">Lig</span> • Yaş: <span id="modal-age">--</span> • <span id="modal-nat">--</span>
+            </p>
+          </div>
+        </div>
+
+        <div class="flex items-center space-x-2">
+          <!-- 1-Click PDF Report Download Button -->
+          <a id="modal-pdf-btn" href="#" target="_blank" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center space-x-1.5 shadow-md shadow-emerald-600/20 transition">
+            <i data-lucide="file-down" class="w-4 h-4"></i>
+            <span>Resmi PDF Raporu İndir</span>
+          </a>
+          <button onclick="closeModal()" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Modal Body (Scrollable) -->
+      <div class="p-6 overflow-y-auto space-y-6 flex-1">
+        
+        <!-- Radar Chart + Key Index Columns -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+          
+          <!-- Radar Canvas -->
+          <div class="glass-card rounded-xl p-4 flex flex-col items-center justify-center relative min-h-[280px]">
+            <h4 class="text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider">Scouting Radar Profili</h4>
+            <div class="w-full max-w-[280px] h-[240px]">
+              <canvas id="modal-radar-chart"></canvas>
+            </div>
+          </div>
+
+          <!-- Compatibility Gauges -->
+          <div class="space-y-4">
+            
+            <div class="glass-card rounded-xl p-4">
+              <div class="flex justify-between items-center mb-1.5">
+                <span class="text-xs font-semibold text-slate-300 flex items-center space-x-1">
+                  <i data-lucide="globe" class="w-3.5 h-3.5 text-indigo-400"></i>
+                  <span>Avrupa Uyumluluk Endeksi (ECI)</span>
+                </span>
+                <span id="modal-eci-score" class="text-sm font-bold text-emerald-400">%0</span>
+              </div>
+              <div class="w-full bg-slate-800 rounded-full h-2">
+                <div id="modal-eci-bar" class="bg-gradient-to-r from-brand-500 to-accent-emerald h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+              </div>
+              <p class="text-[11px] text-slate-400 mt-1.5">Alan açma (3P%), top güvenliği ve düşük top kaybı üzerinden hesaplanır.</p>
+            </div>
+
+            <div class="glass-card rounded-xl p-4">
+              <div class="flex justify-between items-center mb-1.5">
+                <span class="text-xs font-semibold text-slate-300 flex items-center space-x-1">
+                  <i data-lucide="shield" class="w-3.5 h-3.5 text-accent-rose"></i>
+                  <span>Savunma Baskı Endeksi (DPI)</span>
+                </span>
+                <span id="modal-dpi-score" class="text-sm font-bold text-rose-400">%0</span>
+              </div>
+              <div class="w-full bg-slate-800 rounded-full h-2">
+                <div id="modal-dpi-bar" class="bg-gradient-to-r from-amber-500 to-accent-rose h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+              </div>
+              <p class="text-[11px] text-slate-400 mt-1.5">Alimpijević sistemi: tam saha pres, aktif el ve pas kanalı bozuculuğu.</p>
+            </div>
+
+            <!-- Archetype Badge -->
+            <div class="glass-card rounded-xl p-4 flex items-center justify-between">
+              <div>
+                <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Belirlenen Rol (Archetype)</span>
+                <span id="modal-archetype" class="text-base font-bold text-white mt-0.5 block">--</span>
+              </div>
+              <div class="p-2.5 rounded-xl bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                <i data-lucide="award" class="w-5 h-5"></i>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+        <!-- Box Score & Per-36 Statistics Grid -->
+        <div>
+          <h4 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Sezonluk Metrik Ayrışımı (Per Game & Per-36)</h4>
+          <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2.5">
+            
+            <div class="p-3 rounded-xl bg-slate-900/90 border border-slate-800 text-center">
+              <span class="text-[10px] text-slate-400 uppercase font-semibold">Maç / İlk 5</span>
+              <p id="stat-gp" class="text-base font-bold text-white mt-0.5">--</p>
+            </div>
+            
+            <div class="p-3 rounded-xl bg-slate-900/90 border border-slate-800 text-center">
+              <span class="text-[10px] text-slate-400 uppercase font-semibold">Dakika (MPG)</span>
+              <p id="stat-mpg" class="text-base font-bold text-white mt-0.5">--</p>
+            </div>
+
+            <div class="p-3 rounded-xl bg-slate-900/90 border border-slate-800 text-center">
+              <span class="text-[10px] text-slate-400 uppercase font-semibold">Sayı (PPG)</span>
+              <p id="stat-ppg" class="text-base font-bold text-emerald-400 mt-0.5">--</p>
+            </div>
+
+            <div class="p-3 rounded-xl bg-slate-900/90 border border-slate-800 text-center">
+              <span class="text-[10px] text-slate-400 uppercase font-semibold">PTS / 36 Dk</span>
+              <p id="stat-pts36" class="text-base font-bold text-indigo-400 mt-0.5">--</p>
+            </div>
+
+            <div class="p-3 rounded-xl bg-slate-900/90 border border-slate-800 text-center">
+              <span class="text-[10px] text-slate-400 uppercase font-semibold">True Shooting %</span>
+              <p id="stat-ts" class="text-base font-bold text-cyan-400 mt-0.5">--</p>
+            </div>
+
+            <div class="p-3 rounded-xl bg-slate-900/90 border border-slate-800 text-center">
+              <span class="text-[10px] text-slate-400 uppercase font-semibold">AST / TOV Oranı</span>
+              <p id="stat-asttov" class="text-base font-bold text-white mt-0.5">--</p>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Similar Players Section -->
+        <div>
+          <h4 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Benzer Profildeki Oyuncular (Cosine Similarity)</h4>
+          <div id="modal-similar-list" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ================= FOOTER ================= -->
+  <footer class="mt-auto border-t border-slate-900 py-4 text-center text-xs text-slate-500">
+    SmartScout Basketball Analytics Engine • Powered by .NET 10, PostgreSQL & QuestPDF
+  </footer>
+
+  <!-- ================= JAVASCRIPT APP LOGIC ================= -->
+  <script>
+    let currentTab = 'sleepers';
+    let currentRadarChart = null;
+    let directoryPage = 1;
+
+    // Initialize Lucide Icons
+    document.addEventListener("DOMContentLoaded", () => {
+      lucide.createIcons();
+      fetchSleepers();
+    });
+
+    // Tab Switcher
+    function switchTab(tabId) {
+      currentTab = tabId;
+      document.querySelectorAll('.tab-btn').forEach(b => {
+        b.classList.remove('bg-brand-600', 'text-white', 'shadow-sm');
+        b.classList.add('text-slate-300');
+      });
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.add('hidden'));
+
+      const activeNav = document.getElementById(`nav-${tabId}`);
+      if (activeNav) {
+        activeNav.classList.add('bg-brand-600', 'text-white', 'shadow-sm');
+        activeNav.classList.remove('text-slate-300');
+      }
+
+      const activeContent = document.getElementById(`tab-${tabId}`);
+      if (activeContent) {
+        activeContent.classList.remove('hidden');
+      }
+
+      if (tabId === 'players') {
+        fetchDirectory();
+      }
+    }
+
+    // ================= 1. SLEEPER SCOUT API =================
+    async function fetchSleepers() {
+      const cat = document.getElementById('sleeper-category').value;
+      const league = document.getElementById('sleeper-league').value;
+      const season = document.getElementById('sleeper-season').value;
+
+      const grid = document.getElementById('sleepers-grid');
+      const loader = document.getElementById('sleepers-loading');
+      const badge = document.getElementById('sleeper-count-badge');
+
+      grid.innerHTML = '';
+      loader.classList.remove('hidden');
+
+      try {
+        let url = `/api/players/sleepers?season=${season}&top=30`;
+        if (cat) url += `&category=${cat}`;
+        if (league) url += `&league=${league}`;
+
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Sunucu hatası: ' + res.statusText);
+        const data = await res.json();
+
+        loader.classList.add('hidden');
+        badge.innerText = `${data.length} Oyuncu Bulundu`;
+
+        if (data.length === 0) {
+          grid.innerHTML = `
+            <div class="col-span-3 py-12 text-center text-slate-400 glass-card rounded-2xl">
+              <i data-lucide="info" class="w-8 h-8 mx-auto text-slate-500 mb-2"></i>
+              <p class="font-medium">Seçilen filtrelerde hiçbir sleeper oyuncu bulunamadı.</p>
+              <p class="text-xs mt-1 text-slate-500">Sezonu veya lig filtresini değiştirmeyi deneyin.</p>
+            </div>
+          `;
+          lucide.createIcons();
+          return;
+        }
+
+        grid.innerHTML = data.map(p => {
+          const categoryVal = p.sleeperCategory || p.category || 'Sleeper';
+          const reasons = p.scoutingReasons || p.discoveryReasons || [];
+          const teamDisplayName = formatTeamName(p.teamName, p.league);
+          return `
+          <div class="glass-card glass-card-hover rounded-2xl p-5 flex flex-col justify-between">
+            <div>
+              <!-- Header: Score + Tag -->
+              <div class="flex items-center justify-between">
+                <span class="px-2.5 py-1 rounded-lg text-xs font-semibold ${getCategoryBadgeColor(categoryVal)}">
+                  ${formatCategory(categoryVal)}
+                </span>
+                <div class="flex items-center space-x-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 glow-score">
+                  <i data-lucide="zap" class="w-3.5 h-3.5"></i>
+                  <span class="font-bold text-sm">${p.sleeperScore.toFixed(1)}</span>
+                </div>
+              </div>
+
+              <!-- Player Bio -->
+              <div class="mt-4">
+                <h4 class="font-display font-bold text-lg text-white truncate cursor-pointer hover:text-brand-400 transition" onclick="openPlayerModal('${p.playerId}', ${p.season})">
+                  ${p.fullName}
+                </h4>
+                <div class="flex items-center space-x-2 text-xs text-slate-400 mt-1">
+                  <span class="font-semibold text-slate-300 px-1.5 py-0.5 rounded bg-slate-800">${p.position || 'F'}</span>
+                  <span class="font-medium text-slate-200">${teamDisplayName}</span>
+                  <span>•</span>
+                  <span class="font-medium text-indigo-400">${p.league}</span>
+                  ${p.age ? `<span>•</span><span>Yaş: ${p.age}</span>` : ''}
+                </div>
+              </div>
+
+              <!-- Stats Preview Grid -->
+              <div class="grid grid-cols-3 gap-2 mt-4 p-2.5 rounded-xl bg-slate-900/80 border border-slate-800/80 text-center">
+                <div>
+                  <span class="text-[10px] text-slate-400 uppercase font-medium">Sayı (PPG)</span>
+                  <p class="text-sm font-bold text-white mt-0.5">${p.points ? p.points.toFixed(1) : '-'}</p>
+                </div>
+                <div>
+                  <span class="text-[10px] text-slate-400 uppercase font-medium">PTS / 36</span>
+                  <p class="text-sm font-bold text-emerald-400 mt-0.5">${p.ptsPer36 ? p.ptsPer36.toFixed(1) : '-'}</p>
+                </div>
+                <div>
+                  <span class="text-[10px] text-slate-400 uppercase font-medium">True Shoot</span>
+                  <p class="text-sm font-bold text-cyan-400 mt-0.5">${p.trueShootingPct ? (p.trueShootingPct * 100).toFixed(1) + '%' : '-'}</p>
+                </div>
+              </div>
+
+              <!-- Discovery Reasons -->
+              <div class="mt-3.5 space-y-1.5">
+                ${reasons.slice(0, 2).map(r => `
+                  <div class="flex items-start space-x-1.5 text-xs text-slate-300">
+                    <span class="text-emerald-400 font-bold">•</span>
+                    <span class="line-clamp-2">${r}</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+
+            <!-- Footer Actions -->
+            <div class="mt-5 pt-3.5 border-t border-slate-800/80 flex items-center justify-between gap-2">
+              <button onclick="openPlayerModal('${p.playerId}', ${p.season})" class="flex-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center space-x-1 transition">
+                <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                <span>İncele & Radar</span>
+              </button>
+              <a href="/api/players/${p.playerId}/report.pdf?season=${p.season}" target="_blank" class="p-2 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 text-xs font-semibold transition" title="Resmi PDF İndir">
+                <i data-lucide="file-down" class="w-4 h-4"></i>
+              </a>
+            </div>
+
+          </div>
+        `;
+        }).join('');
+
+        lucide.createIcons();
+
+      } catch (err) {
+        loader.classList.add('hidden');
+        grid.innerHTML = `
+          <div class="col-span-3 p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-sm">
+            Hata: ${err.message}
+          </div>
+        `;
+      }
+    }
+
+    // ================= 2. SMART AI SEARCH API =================
+    async function executeSmartSearch() {
+      const prompt = document.getElementById('smart-prompt-input').value.trim();
+      if (!prompt) return;
+
+      const grid = document.getElementById('search-results-grid');
+      const loader = document.getElementById('search-loading');
+      const header = document.getElementById('search-results-header');
+      const badge = document.getElementById('search-count-badge');
+
+      grid.innerHTML = '';
+      header.classList.add('hidden');
+      loader.classList.remove('hidden');
+
+      try {
+        const res = await fetch(`/api/players/smart-search?prompt=${encodeURIComponent(prompt)}&top=18`);
+        if (!res.ok) throw new Error('Arama hatası: ' + res.statusText);
+        const data = await res.json();
+
+        loader.classList.add('hidden');
+        header.classList.remove('hidden');
+        badge.innerText = `${data.length} Aday Bulundu`;
+
+        if (data.length === 0) {
+          grid.innerHTML = `
+            <div class="col-span-3 py-12 text-center text-slate-400 glass-card rounded-2xl">
+              <i data-lucide="search-x" class="w-8 h-8 mx-auto text-slate-500 mb-2"></i>
+              <p class="font-medium">Bu arama kriterine uygun oyuncu bulunamadı.</p>
+              <p class="text-xs mt-1 text-slate-500">Lütfen farklı kelimelerle arama yapmayı deneyin.</p>
+            </div>
+          `;
+          lucide.createIcons();
+          return;
+        }
+
+        grid.innerHTML = data.map(p => {
+          const teamDisplayName = formatTeamName(p.teamName, p.league);
+          const reasonText = p.reasonForMatch || (p.matchReasons && p.matchReasons.join('. ')) || '';
+          return `
+          <div class="glass-card glass-card-hover rounded-2xl p-5 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between">
+                <span class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                  ${p.matchedArchetype || p.archetype || 'Role Player'}
+                </span>
+                <span class="text-xs font-bold text-slate-400">${p.season} Sezonu</span>
+              </div>
+
+              <div class="mt-4">
+                <h4 class="font-display font-bold text-lg text-white truncate cursor-pointer hover:text-brand-400 transition" onclick="openPlayerModal('${p.playerId}', ${p.season})">
+                  ${p.fullName}
+                </h4>
+                <div class="flex items-center space-x-2 text-xs text-slate-400 mt-1">
+                  <span class="font-semibold text-slate-300 px-1.5 py-0.5 rounded bg-slate-800">${p.position || 'F'}</span>
+                  <span class="font-medium text-slate-200">${teamDisplayName}</span>
+                  <span>•</span>
+                  <span class="font-medium text-emerald-400">${p.league}</span>
+                </div>
+              </div>
+
+              <!-- Compatibility Gauges -->
+              <div class="mt-4 space-y-2">
+                <div>
+                  <div class="flex justify-between text-xs mb-1">
+                    <span class="text-slate-400">Avrupa Uyumu (ECI)</span>
+                    <span class="font-bold text-emerald-400">%${p.europeanCompatibilityIndex ? p.europeanCompatibilityIndex.toFixed(1) : 0}</span>
+                  </div>
+                  <div class="w-full bg-slate-800 rounded-full h-1.5">
+                    <div class="bg-emerald-500 h-1.5 rounded-full" style="width: ${p.europeanCompatibilityIndex || 0}%"></div>
+                  </div>
+                </div>
+
+                <div>
+                  <div class="flex justify-between text-xs mb-1">
+                    <span class="text-slate-400">Savunma Baskı (DPI)</span>
+                    <span class="font-bold text-rose-400">%${p.defensivePressureIndex ? p.defensivePressureIndex.toFixed(1) : 0}</span>
+                  </div>
+                  <div class="w-full bg-slate-800 rounded-full h-1.5">
+                    <div class="bg-rose-500 h-1.5 rounded-full" style="width: ${p.defensivePressureIndex || 0}%"></div>
+                  </div>
+                </div>
+              </div>
+
+              ${reasonText ? `
+              <p class="text-xs text-slate-300 mt-3.5 italic bg-slate-900/60 p-2.5 rounded-xl border border-slate-800/80">
+                "${reasonText}"
+              </p>` : ''}
+            </div>
+
+            <div class="mt-5 pt-3.5 border-t border-slate-800/80 flex items-center justify-between gap-2">
+              <button onclick="openPlayerModal('${p.playerId}', ${p.season})" class="flex-1 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center space-x-1 transition">
+                <i data-lucide="eye" class="w-3.5 h-3.5"></i>
+                <span>İncele & Radar</span>
+              </button>
+              <a href="/api/players/${p.playerId}/report.pdf?season=${p.season}" target="_blank" class="p-2 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 text-xs font-semibold transition" title="Resmi PDF İndir">
+                <i data-lucide="file-down" class="w-4 h-4"></i>
+              </a>
+            </div>
+
+          </div>
+        `;
+        }).join('');
+
+        lucide.createIcons();
+
+      } catch (err) {
+        loader.classList.add('hidden');
+        grid.innerHTML = `
+          <div class="col-span-3 p-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-sm">
+            Hata: ${err.message}
+          </div>
+        `;
+      }
+    }
+
+    function applySamplePrompt(text) {
+      document.getElementById('smart-prompt-input').value = text;
+      executeSmartSearch();
+    }
+
+    // ================= 3. OYUNCU MODALI & RADAR CHART =================
+    async function openPlayerModal(playerId, season) {
+      const modal = document.getElementById('player-modal');
+      modal.classList.remove('hidden');
+
+      // Set PDF download URL
+      document.getElementById('modal-pdf-btn').href = `/api/players/${playerId}/report.pdf?season=${season || 2024}`;
+
+      try {
+        const res = await fetch(`/api/players/${playerId}/profile?season=${season || 2024}`);
+        let p = null;
+        if (res.ok) {
+          p = await res.json();
+        }
+
+        // Fill basic bio
+        if (p) {
+          document.getElementById('modal-name').innerText = p.fullName;
+          document.getElementById('modal-initials').innerText = p.fullName.split(' ').map(n=>n[0]).join('').slice(0,2);
+          document.getElementById('modal-pos').innerText = p.position || 'F';
+          document.getElementById('modal-team').innerText = formatTeamName(p.teamName, p.league);
+          document.getElementById('modal-league').innerText = p.league;
+          document.getElementById('modal-age').innerText = p.age || '--';
+          document.getElementById('modal-nat').innerText = formatNationality(p.nationality, p.league, p.fullName);
+          document.getElementById('modal-archetype').innerText = p.archetype || p.matchedArchetype || 'Role Player';
+
+          const eci = p.europeanCompatibilityIndex || 0;
+          const dpi = p.defensivePressureIndex || 0;
+          document.getElementById('modal-eci-score').innerText = `%${eci.toFixed(1)}`;
+          document.getElementById('modal-eci-bar').style.width = `${Math.min(100, Math.max(0, eci))}%`;
+          document.getElementById('modal-dpi-score').innerText = `%${dpi.toFixed(1)}`;
+          document.getElementById('modal-dpi-bar').style.width = `${Math.min(100, Math.max(0, dpi))}%`;
+
+          // Stats
+          document.getElementById('stat-gp').innerText = `${p.gamesPlayed || 0} GP`;
+          document.getElementById('stat-mpg').innerText = p.minutes ? p.minutes.toFixed(1) : '-';
+          document.getElementById('stat-ppg').innerText = p.points ? p.points.toFixed(1) : '-';
+          document.getElementById('stat-pts36').innerText = p.ptsPer36 ? p.ptsPer36.toFixed(1) : '-';
+          document.getElementById('stat-ts').innerText = p.trueShootingPct ? (p.trueShootingPct * 100).toFixed(1) + '%' : '-';
+          document.getElementById('stat-asttov').innerText = p.assistToTurnoverRatio ? p.assistToTurnoverRatio.toFixed(2) : '-';
+
+          // Render Radar Chart
+          renderRadar(p.radarMetrics);
+        }
+
+        // Fetch Similar Players
+        fetchSimilarPlayers(playerId, season || 2024);
+
+      } catch (err) {
+        console.error('Modal yükleme hatası:', err);
+      }
+    }
+
+    function renderRadar(radar) {
+      const ctx = document.getElementById('modal-radar-chart').getContext('2d');
+      if (currentRadarChart) {
+        currentRadarChart.destroy();
+      }
+
+      const labels = ['Skor', 'Şut / Alan', 'Oyun Kurma', 'Ribaund', 'Savunma', 'Verimlilik'];
+      const dataValues = radar ? [
+        radar.scoringImpact || radar.scoring || 50,
+        radar.perimeterSpacing || radar.shootingEfficiency || 50,
+        radar.playmakingLoad || radar.playmaking || 50,
+        radar.reboundDominance || radar.rebounding || 50,
+        radar.defensiveDisruption || radar.defense || 50,
+        radar.efficiencyFactor || radar.overallImpact || 50
+      ] : [50, 50, 50, 50, 50, 50];
+
+      currentRadarChart = new Chart(ctx, {
+        type: 'radar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Oyuncu Profili',
+            data: dataValues,
+            backgroundColor: 'rgba(99, 102, 241, 0.25)',
+            borderColor: '#6366f1',
+            borderWidth: 2,
+            pointBackgroundColor: '#10b981',
+            pointBorderColor: '#fff',
+            pointRadius: 3
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            r: {
+              angleLines: { color: 'rgba(255, 255, 255, 0.1)' },
+              grid: { color: 'rgba(255, 255, 255, 0.1)' },
+              pointLabels: {
+                color: '#94a3b8',
+                font: { size: 10, family: 'Outfit' }
+              },
+              ticks: { display: false, min: 0, max: 100 }
+            }
+          },
+          plugins: {
+            legend: { display: false }
+          }
+        }
+      });
+    }
+
+    async function fetchSimilarPlayers(playerId, season) {
+      const list = document.getElementById('modal-similar-list');
+      list.innerHTML = '<div class="col-span-2 text-xs text-slate-500 py-2">Benzer profiller aranıyor...</div>';
+
+      try {
+        const res = await fetch(`/api/players/${playerId}/similar?season=${season}&top=4&minGamesPlayed=10`);
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+
+        if (data.length === 0) {
+          list.innerHTML = '<div class="col-span-2 text-xs text-slate-500 py-2">Eşleşen benzer oyuncu bulunamadı.</div>';
+          return;
+        }
+
+        list.innerHTML = data.map(s => `
+          <div class="p-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
+            <div>
+              <p class="font-bold text-sm text-white">${s.fullName}</p>
+              <p class="text-xs text-slate-400 mt-0.5">${formatTeamName(s.teamName, s.league)} • ${s.league}</p>
+            </div>
+            <span class="px-2 py-1 rounded-lg text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              %${s.similarityScore.toFixed(1)} Benzer
+            </span>
+          </div>
+        `).join('');
+
+      } catch {
+        list.innerHTML = '<div class="col-span-2 text-xs text-slate-500 py-2">Benzerlik analizi getirilemedi.</div>';
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('player-modal').classList.add('hidden');
+    }
+
+    // ================= 4. OYUNCU HAVUZU TABLOSU =================
+    let directorySearchTimeout = null;
+    function debounceDirectorySearch() {
+      clearTimeout(directorySearchTimeout);
+      directorySearchTimeout = setTimeout(() => {
+        directoryPage = 1;
+        fetchDirectory();
+      }, 350);
+    }
+
+    async function fetchDirectory() {
+      const q = document.getElementById('directory-search-input').value.trim();
+      const tbody = document.getElementById('directory-table-body');
+      tbody.innerHTML = '<tr><td colspan="6" class="p-4 text-center text-slate-500">Yükleniyor...</td></tr>';
+
+      try {
+        const res = await fetch(`/api/players?page=${directoryPage}&pageSize=15&search=${encodeURIComponent(q)}`);
+        const data = await res.json();
+
+        document.getElementById('directory-page-info').innerText = `Sayfa ${data.page} / ${Math.ceil(data.totalCount / data.pageSize) || 1}`;
+
+        tbody.innerHTML = (data.items || []).map(p => `
+          <tr class="hover:bg-slate-800/40 transition">
+            <td class="py-3 px-4 font-semibold text-white">${p.fullName}</td>
+            <td class="py-3 px-4"><span class="px-2 py-0.5 rounded text-xs bg-slate-800 text-slate-300">${p.position || 'F'}</span></td>
+            <td class="py-3 px-4 text-slate-300 font-medium">${formatTeamName(p.teamName, p.league)}</td>
+            <td class="py-3 px-4 font-medium text-indigo-400">${p.league || '-'}</td>
+            <td class="py-3 px-4"><span class="px-2 py-0.5 rounded text-xs bg-slate-800/80 font-mono text-slate-300 font-semibold">${formatNationality(p.nationality, p.league, p.fullName)}</span></td>
+            <td class="py-3 px-4 text-right">
+              <button onclick="openPlayerModal('${p.id}', 2024)" class="px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition">
+                Detay
+              </button>
+            </td>
+          </tr>
+        `).join('');
+
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="6" class="p-4 text-center text-rose-400">Hata: ${err.message}</td></tr>`;
+      }
+    }
+
+    function prevDirectoryPage() {
+      if (directoryPage > 1) {
+        directoryPage--;
+        fetchDirectory();
+      }
+    }
+
+    function nextDirectoryPage() {
+      directoryPage++;
+      fetchDirectory();
+    }
+
+    // ================= 5. SENKRONİZASYON TETİKLEYİCİ =================
+    async function triggerSync(league, season) {
+      const consoleBox = document.getElementById('sync-console');
+      consoleBox.innerHTML += `\n[${new Date().toLocaleTimeString()}]: ${league} (${season}) senkronizasyonu başlatılıyor...`;
+      consoleBox.scrollTop = consoleBox.scrollHeight;
+
+      try {
+        const res = await fetch(`/api/players/sync-stats?league=${league}&season=${season}&force=true`, {
+          method: 'POST'
+        });
+        const json = await res.json();
+        consoleBox.innerHTML += `\n[${new Date().toLocaleTimeString()}]: Başarılı! ${json.message || 'Senkronize edildi.'}`;
+      } catch (err) {
+        consoleBox.innerHTML += `\n[${new Date().toLocaleTimeString()}]: HATA! ${err.message}`;
+      }
+      consoleBox.scrollTop = consoleBox.scrollHeight;
+    }
+
+    // Helper functions & Dictionaries
+    const TEAM_NAMES = {
+      // G-League
+      'IND': 'Indiana Mad Ants',
+      'MNE': 'Maine Celtics',
+      'OSC': 'Osceola Magic',
+      'WCB': 'Windy City Bulls',
+      'SLC': 'Salt Lake City Stars',
+      'RGV': 'Rio Grande Valley Vipers',
+      'SCW': 'Santa Cruz Warriors',
+      'GOL': 'Santa Cruz Warriors',
+      'STO': 'Stockton Kings',
+      'SBL': 'South Bay Lakers',
+      'ONT': 'San Diego Clippers',
+      'RAP': 'Raptors 905',
+      'DEL': 'Delaware Blue Coats',
+      'LIN': 'Long Island Nets',
+      'WES': 'Westchester Knicks',
+      'CAP': 'Capital City Go-Go',
+      'CCG': 'Capital City Go-Go',
+      'COL': 'College Park Skyhawks',
+      'GLI': 'G League Ignite',
+      'GRE': 'Greensboro Swarm',
+      'MHV': 'Motor City Cruise',
+      'MCC': 'Motor City Cruise',
+      'SOU': 'Sioux Falls Skyforce',
+      'SXF': 'Sioux Falls Skyforce',
+      'TEX': 'Texas Legends',
+      'AUS': 'Austin Spurs',
+      'CTX': 'Capitanes de Ciudad de México',
+      'MXC': 'Capitanes de Ciudad de México',
+      'BIR': 'Birmingham Squadron',
+      'IOW': 'Iowa Wolves',
+      'WIS': 'Wisconsin Herd',
+      'CRU': 'Cleveland Charge',
+
+      // NBA
+      'ATL': 'Atlanta Hawks',
+      'BOS': 'Boston Celtics',
+      'BKN': 'Brooklyn Nets',
+      'CHA': 'Charlotte Hornets',
+      'CHI': 'Chicago Bulls',
+      'CLE': 'Cleveland Cavaliers',
+      'DAL': 'Dallas Mavericks',
+      'DEN': 'Denver Nuggets',
+      'DET': 'Detroit Pistons',
+      'GSW': 'Golden State Warriors',
+      'HOU': 'Houston Rockets',
+      'LAC': 'LA Clippers',
+      'LAL': 'Los Angeles Lakers',
+      'MEM': 'Memphis Grizzlies',
+      'MIA': 'Miami Heat',
+      'MIL': 'Milwaukee Bucks',
+      'MIN': 'Minnesota Timberwolves',
+      'NOP': 'New Orleans Pelicans',
+      'NYK': 'New York Knicks',
+      'OKC': 'Oklahoma City Thunder',
+      'ORL': 'Orlando Magic',
+      'PHI': 'Philadelphia 76ers',
+      'PHX': 'Phoenix Suns',
+      'POR': 'Portland Trail Blazers',
+      'SAC': 'Sacramento Kings',
+      'SAS': 'San Antonio Spurs',
+      'TOR': 'Toronto Raptors',
+      'UTA': 'Utah Jazz',
+      'WAS': 'Washington Wizards',
+
+      // VTB / European
+      'AST': 'BC Astana',
+      'UNI': 'UNICS Kazan',
+      'CSK': 'CSKA Moscow',
+      'ZEN': 'Zenit Saint Petersburg',
+      'LKM': 'Lokomotiv Kuban',
+      'NN': 'Nizhny Novgorod',
+      'PAR': 'Parma Perm',
+      'ENI': 'Enisey Krasnoyarsk',
+      'SMR': 'Samara',
+      'MBA': 'MBA Moscow',
+      'AUT': 'Avtodor Saratov',
+      'URA': 'Uralmash Yekaterinburg',
+      'RUN': 'Runa Basket Moscow'
+    };
+
+    function formatTeamName(team, league) {
+      if (!team || team === '-' || team === 'Bilinmiyor') return 'Serbest / Belirtilmemiş';
+      const trimmed = team.trim();
+      if (league === 'NBA' && trimmed === 'IND') return 'Indiana Pacers';
+      if (TEAM_NAMES[trimmed]) return TEAM_NAMES[trimmed];
+      return trimmed;
+    }
+
+    const KNOWN_NATIONALITIES = {
+      'Oscar Tshiebwe': 'COD',
+      'Adama Sanogo': 'MLI',
+      'Efe Abogidi': 'NGA',
+      'Veniamin Abosi': 'GRE',
+      'Alberto Abalde': 'ESP',
+      'Awudu Abass': 'ITA',
+      'Ruslan Abdulbasirov': 'RUS',
+      'Sardal Abashidze': 'GEO',
+      'Riley Abercrombie': 'AUS',
+      'Akwasi Abeyie Yeboah': 'GBR',
+      'Nikola Jokic': 'SRB',
+      'Luka Doncic': 'SLO',
+      'Giannis Antetokounmpo': 'GRE',
+      'Alperen Sengun': 'TUR',
+      'Cedi Osman': 'TUR',
+      'Furkan Korkmaz': 'TUR',
+      'Sertac Sanli': 'TUR',
+      'Melih Mahmutoglu': 'TUR',
+      'Onuralp Bitim': 'TUR',
+      'Sehmus Hazer': 'TUR',
+      'Ercan Osmani': 'TUR',
+      'Bugrahan Tuncer': 'TUR',
+      'Dogus Ozdemiroglu': 'TUR',
+      'Erkan Yilmaz': 'TUR',
+      'Kenan Sipahi': 'TUR',
+      'Sadik Emir Kabaca': 'TUR',
+      'Tarik Biberovic': 'TUR',
+      'Samet Yigitoglu': 'TUR',
+      'Omer Faruk Yurtseven': 'TUR',
+      'Adem Bona': 'TUR'
+    };
+
+    function formatNationality(nat, league, fullName) {
+      if (fullName && KNOWN_NATIONALITIES[fullName]) {
+        return KNOWN_NATIONALITIES[fullName];
+      }
+      if (!nat || nat === 'INTL' || nat === 'Unknown') {
+        if (league === 'NBA' || league === 'GLeague' || league === 'NCAA') {
+          return 'USA';
+        }
+        return '—';
+      }
+      return nat;
+    }
+
+    function formatCategory(cat) {
+      if (!cat) return 'Sleeper';
+      if (cat === 'LowMinute' || cat === 'LowMinuteMonster') return '⏱️ Low-Minute Monster';
+      if (cat === 'ForgottenPeak') return '📉 Forgotten Peak';
+      if (cat === 'StepUpCandidate') return '🚀 Step-Up Star';
+      return cat;
+    }
+
+    function getCategoryBadgeColor(cat) {
+      if (cat === 'LowMinute' || cat === 'LowMinuteMonster') return 'bg-amber-500/10 text-amber-400 border border-amber-500/20';
+      if (cat === 'ForgottenPeak') return 'bg-rose-500/10 text-rose-400 border border-rose-500/20';
+      if (cat === 'StepUpCandidate') return 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+      return 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20';
+    }
+  </script>
+</body>
+</html>

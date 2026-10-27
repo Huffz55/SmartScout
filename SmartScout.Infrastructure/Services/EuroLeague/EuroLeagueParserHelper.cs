@@ -42,6 +42,11 @@ public static class EuroLeagueParserHelper
 
     public static string? DetectNationality(string firstName, string lastName, string? teamName)
     {
+        return SmartScout.Domain.Entities.Player.DetectNationality(firstName, lastName, teamName);
+    }
+
+    private static string? OldDetectNationality(string firstName, string lastName, string? teamName)
+    {
         string fullName = $"{firstName} {lastName}".Trim();
         if (KnownTurkishNames.Contains(fullName))
         {

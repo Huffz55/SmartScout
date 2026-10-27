@@ -13,4 +13,5 @@ public interface IPlayerAnalyticsService
     PlayerComparisonDto Compare(PlayerSeasonStat statA, Player playerA, PlayerSeasonStat statB, Player playerB);
     double CalculateEuropeanCompatibilityIndex(PlayerSeasonStat stat);
     double CalculateDefensivePressureIndex(PlayerSeasonStat stat);
+    double CalculateBuyLowBounceBackIndex(PlayerSeasonStat currentStat, IEnumerable<PlayerSeasonStat>? careerHistory = null);
 }

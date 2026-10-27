@@ -29,6 +29,7 @@ public class GetPlayerScoutingReportQueryHandler : IRequestHandler<GetPlayerScou
     {
         var stat = await _dbContext.SeasonStats
             .Include(s => s.Player)
+                .ThenInclude(p => p!.SeasonStats)
             .FirstOrDefaultAsync(s => s.PlayerId == request.PlayerId && s.Season == request.Season, cancellationToken);
 
         if (stat == null || stat.Player == null)
@@ -41,8 +42,9 @@ public class GetPlayerScoutingReportQueryHandler : IRequestHandler<GetPlayerScou
         var radar = _analyticsService.CalculateRadarMetrics(stat);
         double eci = _analyticsService.CalculateEuropeanCompatibilityIndex(stat);
         double dpi = _analyticsService.CalculateDefensivePressureIndex(stat);
+        double buyLow = _analyticsService.CalculateBuyLowBounceBackIndex(stat, player.SeasonStats);
 
-        string verdict = GenerateTacticalVerdict(player.FirstName, player.LastName, archetype.ToString(), stat, radar, eci, dpi);
+        string verdict = GenerateTacticalVerdict(player.FirstName, player.LastName, archetype.ToString(), stat, radar, eci, dpi, buyLow);
 
         var reportDto = new PlayerScoutingReportDto
         {
@@ -52,8 +54,8 @@ public class GetPlayerScoutingReportQueryHandler : IRequestHandler<GetPlayerScou
             Position = player.Position,
             Height = player.Height,
             WeightPounds = player.WeightPounds,
-            TeamName = player.TeamName,
-            League = player.League,
+            TeamName = !string.IsNullOrWhiteSpace(stat.TeamName) ? stat.TeamName : player.TeamName,
+            League = !string.IsNullOrWhiteSpace(stat.League) ? stat.League : player.League,
             Season = stat.Season,
             Archetype = archetype.ToString(),
             RadarMetrics = radar,
@@ -77,12 +79,15 @@ public class GetPlayerScoutingReportQueryHandler : IRequestHandler<GetPlayerScou
             BoxPlusMinus = stat.BoxPlusMinus,
             Nationality = player.Nationality,
             Pir = stat.Pir,
+            PtsPer36 = stat.PtsPer36,
+            AssistToTurnoverRatio = stat.Turnovers > 0 ? (stat.Assists / stat.Turnovers) : (stat.Assists ?? 0),
             FoulsDrawn = stat.FoulsDrawn,
             PointsPer40 = stat.PointsPer40,
             AssistsPer40 = stat.AssistsPer40,
             ReboundsPer40 = stat.ReboundsPer40,
             EuropeanCompatibilityIndex = eci,
             DefensivePressureIndex = dpi,
+            BuyLowBounceBackIndex = buyLow,
             TacticalVerdict = verdict
         };
 
@@ -96,7 +101,8 @@ public class GetPlayerScoutingReportQueryHandler : IRequestHandler<GetPlayerScou
         Domain.Entities.PlayerSeasonStat stat, 
         RadarMetricsDto radar,
         double eci,
-        double dpi)
+        double dpi,
+        double buyLow)
     {
         string fullName = $"{firstName} {lastName}".Trim();
         string tier = radar.OverallImpact switch
@@ -120,6 +126,10 @@ public class GetPlayerScoutingReportQueryHandler : IRequestHandler<GetPlayerScou
         if (eci >= 70.0)
         {
             euroInsight += $" Outstanding European Compatibility Index (ECI: {eci:F1}/100) indicates high tactical acumen and floor-spacing reliability for European half-court structures.";
+        }
+        if (buyLow >= 70.0)
+        {
+            euroInsight += $" High Moneyball Buy-Low / Bounce-Back Index ({buyLow:F1}/100) flags a premier undervalued target with proven ceiling and Per-40 breakout upside.";
         }
 
         return $"{fullName} is classified as a {archetype} ({tier}). In this campaign, the player {shootingNote} " +

@@ -5,6 +5,9 @@ using SmartScout.Infrastructure;
 using System;
 using System.Threading.RateLimiting;
 
+// Enable legacy timestamp behavior for PostgreSQL Npgsql to prevent ArgumentException with Unspecified DateTime
+AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -82,6 +85,9 @@ else
 {
     app.UseHttpsRedirection();
 }
+
+app.UseDefaultFiles();
+app.UseStaticFiles();
 
 app.UseCors("AllowFrontend");
 app.UseRateLimiter();
