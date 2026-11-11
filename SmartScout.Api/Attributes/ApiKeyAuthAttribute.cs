@@ -18,8 +18,11 @@ public class ApiKeyAuthAttribute : Attribute, IAsyncActionFilter
     {
         if (!context.HttpContext.Request.Headers.TryGetValue(ApiKeyHeaderName, out var potentialApiKey) || string.IsNullOrWhiteSpace(potentialApiKey))
         {
-            context.Result = new UnauthorizedObjectResult(new { Message = $"API Key is required. Please provide '{ApiKeyHeaderName}' in request headers." });
-            return;
+            if (!context.HttpContext.Request.Query.TryGetValue("apiKey", out potentialApiKey) || string.IsNullOrWhiteSpace(potentialApiKey))
+            {
+                context.Result = new UnauthorizedObjectResult(new { Message = $"API Key is required. Please provide '{ApiKeyHeaderName}' in request headers or 'apiKey' query parameter." });
+                return;
+            }
         }
 
         var configuration = context.HttpContext.RequestServices.GetRequiredService<IConfiguration>();

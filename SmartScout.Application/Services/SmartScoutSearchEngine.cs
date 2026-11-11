@@ -21,7 +21,8 @@ public class SmartScoutSearchEngine : ISmartScoutSearchEngine
     public List<SmartScoutSearchResultDto> Search(
         string prompt, 
         IEnumerable<PlayerSeasonStat> candidateStats, 
-        int top = 20)
+        int top = 20,
+        int? targetSeason = null)
     {
         if (string.IsNullOrWhiteSpace(prompt))
             return new List<SmartScoutSearchResultDto>();
@@ -30,6 +31,7 @@ public class SmartScoutSearchEngine : ISmartScoutSearchEngine
         if (!candidateList.Any())
             return new List<SmartScoutSearchResultDto>();
 
+        int maxDatasetSeason = candidateList.Max(s => s.Season);
         string cleanPrompt = prompt.ToLowerInvariant();
 
         // Group career history by PlayerId so multi-season trajectory & buy-low bounce-back can be evaluated
@@ -80,11 +82,35 @@ public class SmartScoutSearchEngine : ISmartScoutSearchEngine
         bool wantsNbaOnly = cleanPrompt.Contains("nba");
 
         // 4. Extract explicit numeric thresholds (e.g., "20+ pts", "25 pts")
-        decimal minPoints = ExtractMetricThreshold(cleanPrompt, @"(\d+)\+?\s*(?:pts|points)");
-        decimal minAssists = ExtractMetricThreshold(cleanPrompt, @"(\d+)\+?\s*(?:ast|assists)");
-        decimal minRebounds = ExtractMetricThreshold(cleanPrompt, @"(\d+)\+?\s*(?:reb|rebounds)");
+        decimal minPoints = ExtractMetricThreshold(cleanPrompt, @"(\d+)\+?\s*(?:pts|points|sayı|sayi)");
+        decimal minAssists = ExtractMetricThreshold(cleanPrompt, @"(\d+)\+?\s*(?:ast|assists|asist)");
+        decimal minRebounds = ExtractMetricThreshold(cleanPrompt, @"(\d+)\+?\s*(?:reb|rebounds|ribaund)");
         decimal minPir = ExtractMetricThreshold(cleanPrompt, @"(\d+)\+?\s*(?:pir|valuation|verimlilik)");
         decimal minFoulsDrawn = ExtractMetricThreshold(cleanPrompt, @"(\d+)\+?\s*(?:fouls?|faul)");
+
+        // 5. Multi-Constraint NLP Extractions (Age, Height, Contract, Percentage Cutoffs, Negative/Discipline Intents)
+        int? maxAge = ExtractAgeCap(cleanPrompt);
+        int? minHeightCm = ExtractMinHeightCm(cleanPrompt);
+        int? targetContractYear = ExtractContractExpiryYear(cleanPrompt);
+        decimal minFg3Pct = ExtractPercentageCutoff(cleanPrompt, @"(?:%\s*(\d{2})|(\d{2})\s*%)\+?\s*(?:3pt|3p|three|üçlük|ucluk)");
+        decimal minTsPct = ExtractPercentageCutoff(cleanPrompt, @"(?:%\s*(\d{2})|(\d{2})\s*%)\+?\s*(?:ts|true shooting)");
+
+        bool wantsLowTurnover = cleanPrompt.Contains("low turnover") || cleanPrompt.Contains("low tov") ||
+                                cleanPrompt.Contains("düşük top kaybı") || cleanPrompt.Contains("dusuk top kaybi") ||
+                                cleanPrompt.Contains("top kaybı yapmayan") || cleanPrompt.Contains("top kaybi yapmayan") ||
+                                cleanPrompt.Contains("ball security");
+        bool wantsLowFoul = cleanPrompt.Contains("low foul") || cleanPrompt.Contains("foul discipline") ||
+                            cleanPrompt.Contains("faul problemi olmayan") || cleanPrompt.Contains("az faul");
+        bool wantsLowUsage = cleanPrompt.Contains("low usage") || cleanPrompt.Contains("off-ball") ||
+                             cleanPrompt.Contains("off ball") || cleanPrompt.Contains("topsuk") || cleanPrompt.Contains("topsuz");
+        bool wantsSwitchable = cleanPrompt.Contains("switch") || cleanPrompt.Contains("wingspan") ||
+                               cleanPrompt.Contains("uzun kol") || cleanPrompt.Contains("atletik");
+
+        var parsedConstraints = BuildParsedConstraintsList(
+            targetPosition, targetArchetype, maxAge, minHeightCm, targetContractYear,
+            minPoints, minAssists, minRebounds, minFg3Pct, minTsPct,
+            wantsTurkish, wantsLowTurnover, wantsLowFoul, wantsLowUsage, wantsSwitchable,
+            wantsBesiktasStyle, wantsEuropeanFit, wantsBuyLowSleeper);
 
         var matchedResults = new List<SmartScoutSearchResultDto>();
 
@@ -98,8 +124,11 @@ public class SmartScoutSearchEngine : ISmartScoutSearchEngine
 
             careerByPlayerId.TryGetValue(stat.PlayerId, out var careerHistory);
 
+            // If caller specified targetSeason (while pre-loading prior career seasons for buy-low comparison), only score targetSeason rows
+            if (targetSeason.HasValue && stat.Season != targetSeason.Value) continue;
+
             // When searching for Buy-Low / Bounce-Back sleepers across multiple seasons, evaluate the player's latest season against their prior peak
-            if (wantsBuyLowSleeper && careerHistory != null && careerHistory.Count > 1)
+            if (wantsBuyLowSleeper && !targetSeason.HasValue && careerHistory != null && careerHistory.Count > 1)
             {
                 int latestSeason = careerHistory.Max(s => s.Season);
                 if (stat.Season != latestSeason) continue;
@@ -129,12 +158,31 @@ public class SmartScoutSearchEngine : ISmartScoutSearchEngine
                 if (!isTurkish) continue;
             }
 
-            // Strict Filter 5: Explicit numeric thresholds
+            // Strict Filter 5: Explicit numeric & physical/contract thresholds
             if (minPoints > 0 && (stat.Points ?? 0) < minPoints) continue;
             if (minAssists > 0 && (stat.Assists ?? 0) < minAssists) continue;
             if (minRebounds > 0 && (stat.Rebounds ?? 0) < minRebounds) continue;
             if (minPir > 0 && (stat.Pir ?? 0) < minPir) continue;
             if (minFoulsDrawn > 0 && (stat.FoulsDrawn ?? 0) < minFoulsDrawn) continue;
+
+            if (maxAge.HasValue)
+            {
+                int? playerAge = player.CurrentAge;
+                if (!playerAge.HasValue || playerAge.Value > maxAge.Value) continue;
+            }
+
+            if (minHeightCm.HasValue)
+            {
+                if (!player.HeightCm.HasValue || player.HeightCm.Value < minHeightCm.Value) continue;
+            }
+
+            if (targetContractYear.HasValue)
+            {
+                if (!player.ContractExpirySeason.HasValue || player.ContractExpirySeason.Value > targetContractYear.Value) continue;
+            }
+
+            if (minFg3Pct > 0m && (stat.Fg3Pct ?? 0m) < minFg3Pct) continue;
+            if (minTsPct > 0m && (stat.TrueShootingPct ?? 0m) < minTsPct) continue;
 
             var archetype = _analyticsService.DetermineArchetype(stat, player.Position, player.Height);
             var radar = _analyticsService.CalculateRadarMetrics(stat);
@@ -239,8 +287,30 @@ public class SmartScoutSearchEngine : ISmartScoutSearchEngine
                 double sleeperBonus = Math.Min(40.0, (buyLow / 100.0) * 40.0);
                 score += sleeperBonus;
 
+                // Prevent established top-tier starters/All-Stars, aging veterans, stale years, or micro-samples from dominating Buy-Low queries
+                bool isEstablishedTopTierStar = (stat.LeagueDifficultyCoefficient >= 0.86m && (stat.Minutes ?? 0m) >= 24.0m && stat.GamesPlayed >= 15)
+                    || (careerHistory != null && careerHistory.Any(s =>
+                        s.Season >= stat.Season - 1 && s.Season <= stat.Season &&
+                        s.LeagueDifficultyCoefficient >= 0.86m && s.GamesPlayed >= 25 && ((s.Points ?? 0m) >= 16.0m || (s.Minutes ?? 0m) >= 27.0m)));
+                if (isEstablishedTopTierStar)
+                {
+                    score -= 24.0;
+                }
+                if (!targetSeason.HasValue && stat.Season < maxDatasetSeason - 2)
+                {
+                    score -= 12.0;
+                }
+                if (player.CurrentAge.HasValue && player.CurrentAge.Value >= 31)
+                {
+                    score -= (player.CurrentAge.Value - 30) * 5.0;
+                }
+                if (stat.GamesPlayed < 8 || (stat.Minutes ?? 0m) < 8.0m)
+                {
+                    score -= 15.0;
+                }
+
                 var priorPeak = careerHistory?
-                    .Where(s => s.Season != stat.Season)
+                    .Where(s => s.Season < stat.Season && s.Season >= stat.Season - 3)
                     .OrderByDescending(s => (s.Points ?? 0m) + (s.Pir ?? s.PlayerEfficiencyRating ?? 0m) * 0.5m)
                     .FirstOrDefault();
 
@@ -279,7 +349,71 @@ public class SmartScoutSearchEngine : ISmartScoutSearchEngine
             if (wantsTurkish)
             {
                 score += 20.0;
-                reasons.Add("Domestic Passport Eligible: Turkish National (Yerli Statüsü)");
+                reasons.Add("Domestic Passport Eligible: Turkish National");
+            }
+
+            // Multi-Constraint Bonuses (Low Turnover, Low Foul, Off-Ball, Switchability, Contract, Age/Size)
+            if (wantsLowTurnover)
+            {
+                decimal astTov = stat.AssistToTurnoverRatio ?? 1.5m;
+                decimal tov = stat.Turnovers ?? 1.8m;
+                if (astTov >= 2.0m || tov <= 1.5m)
+                {
+                    score += 22.0;
+                    reasons.Add($"High Ball Security: {astTov:F2} AST/TOV ({tov:F1} TOV/G)");
+                }
+                else if (tov >= 2.8m)
+                {
+                    score -= 18.0;
+                }
+            }
+
+            if (wantsLowFoul)
+            {
+                decimal pf36 = (stat.Minutes > 0 && stat.PersonalFoulsCommitted.HasValue)
+                    ? (stat.PersonalFoulsCommitted.Value / stat.Minutes.Value) * 36m
+                    : 2.8m;
+                if (pf36 <= 3.1m)
+                {
+                    score += 18.0;
+                    reasons.Add($"High FIBA Foul Discipline: {pf36:F1} PF/36");
+                }
+            }
+
+            if (wantsLowUsage)
+            {
+                decimal usg = stat.UsagePct ?? 18m;
+                if (usg <= 20.5m && (stat.TrueShootingPct ?? 0m) >= 0.55m)
+                {
+                    score += 20.0;
+                    reasons.Add($"Scalable Low-Usage Plug-and-Play: {usg:F1}% USG, {(stat.TrueShootingPct ?? 0) * 100:F1}% TS");
+                }
+            }
+
+            if (wantsSwitchable)
+            {
+                decimal stocks36 = stat.StocksPer36 ?? ((stat.StlPer36 ?? 0m) + (stat.BlkPer36 ?? 0m));
+                int plusLen = (player.WingspanCm ?? 0) - (player.HeightCm ?? 0);
+                if (stocks36 >= 1.8m || plusLen >= 8)
+                {
+                    score += 18.0;
+                    reasons.Add($"Switchable Positional Length: {player.HeightCm}cm / {player.WingspanCm}cm WS ({stocks36:F1} Stocks/36)");
+                }
+            }
+
+            if (maxAge.HasValue && player.CurrentAge.HasValue)
+            {
+                reasons.Add($"Age Criteria Verified: {player.CurrentAge} yrs (≤ U{maxAge.Value})");
+            }
+
+            if (minHeightCm.HasValue && player.HeightCm.HasValue)
+            {
+                reasons.Add($"Size Verified: {player.HeightCm} cm (WS: {player.WingspanCm ?? player.HeightCm + 7} cm)");
+            }
+
+            if (targetContractYear.HasValue && player.ContractExpirySeason.HasValue)
+            {
+                reasons.Add($"Contract Target: Expires {player.ContractExpirySeason} ({player.EstimatedMarketValueTier ?? "Mid-Tier"})");
             }
 
             // Overall Impact / Star Quality
@@ -298,7 +432,10 @@ public class SmartScoutSearchEngine : ISmartScoutSearchEngine
                 reasons.Add($"Overall Production Index: {radar.OverallImpact:F1}/100");
             }
 
-            double finalScore = Math.Round(Math.Max(10.0, Math.Min(99.9, score)), 1);
+            // Smooth asymptotic score compression above 78.0 avoids multi-player saturation ties at 99.9
+            double finalScore = score <= 78.0
+                ? Math.Round(Math.Max(10.0, score), 1)
+                : Math.Round(Math.Min(99.5, 78.0 + 21.5 * (1.0 - Math.Exp(-(score - 78.0) / 28.0))), 1);
 
             matchedResults.Add(new SmartScoutSearchResultDto
             {
@@ -311,6 +448,13 @@ public class SmartScoutSearchEngine : ISmartScoutSearchEngine
                 Archetype = archetype.ToString(),
                 FitScore = finalScore,
                 MatchReasons = reasons.Any() ? reasons : new List<string> { $"Fits tactical profile: {archetype}" },
+                ParsedConstraints = parsedConstraints,
+                Age = player.CurrentAge,
+                HeightCm = player.HeightCm,
+                ContractExpirySeason = player.ContractExpirySeason,
+                EstimatedMarketValueTier = player.EstimatedMarketValueTier,
+                EuroLeagueTransitionIndex = stat.EuroLeagueTransitionIndex,
+                StocksPer36 = stat.StocksPer36 ?? ((stat.StlPer36 ?? 0m) + (stat.BlkPer36 ?? 0m)),
                 Points = stat.Points,
                 Rebounds = stat.Rebounds,
                 Assists = stat.Assists,
@@ -371,11 +515,11 @@ public class SmartScoutSearchEngine : ISmartScoutSearchEngine
 
     private static string? DetectPosition(string prompt)
     {
-        if (prompt.Contains("center") || prompt.Contains("pivot") || prompt.Contains("big man") || prompt.Contains("bigs"))
+        if (prompt.Contains("center") || prompt.Contains("pivot") || prompt.Contains("big man") || prompt.Contains("bigs") || prompt.Contains("5 numara") || prompt.Contains("uzun"))
             return "C";
-        if (prompt.Contains("guard") || prompt.Contains("point guard") || prompt.Contains("shooting guard") || prompt.Contains("pg") || prompt.Contains("sg"))
+        if (prompt.Contains("guard") || prompt.Contains("point guard") || prompt.Contains("shooting guard") || prompt.Contains("pg") || prompt.Contains("sg") || prompt.Contains("oyun kurucu") || prompt.Contains("kısa") || prompt.Contains("kisa"))
             return "G";
-        if (prompt.Contains("forward") || prompt.Contains("wing") || prompt.Contains("small forward") || prompt.Contains("power forward") || prompt.Contains("sf") || prompt.Contains("pf"))
+        if (prompt.Contains("forward") || prompt.Contains("wing") || prompt.Contains("small forward") || prompt.Contains("power forward") || prompt.Contains("sf") || prompt.Contains("pf") || prompt.Contains("forvet") || prompt.Contains("kanat"))
             return "F";
 
         return null;
@@ -389,5 +533,77 @@ public class SmartScoutSearchEngine : ISmartScoutSearchEngine
             return val;
         }
         return 0m;
+    }
+
+    private static int? ExtractAgeCap(string prompt)
+    {
+        var m1 = Regex.Match(prompt, @"\bu\s*(1[89]|2[0-9]|3[0-5])\b");
+        if (m1.Success && int.TryParse(m1.Groups[1].Value, out int uAge)) return uAge;
+
+        var m2 = Regex.Match(prompt, @"(?:under|max age|below)\s*(1[89]|2[0-9]|3[0-5])\b");
+        if (m2.Success && int.TryParse(m2.Groups[1].Value, out int underAge)) return underAge;
+
+        var m3 = Regex.Match(prompt, @"\b(1[89]|2[0-9]|3[0-5])\s*(?:yaş altı|yas alti|yaşından küçük|yasindan kucuk)");
+        if (m3.Success && int.TryParse(m3.Groups[1].Value, out int trAge)) return trAge;
+
+        return null;
+    }
+
+    private static int? ExtractMinHeightCm(string prompt)
+    {
+        var m = Regex.Match(prompt, @"\b(1[89]\d|2[012]\d)\+?\s*cm\b");
+        if (m.Success && int.TryParse(m.Groups[1].Value, out int cm)) return cm;
+        return null;
+    }
+
+    private static int? ExtractContractExpiryYear(string prompt)
+    {
+        if (prompt.Contains("contract") || prompt.Contains("expir") || prompt.Contains("free agent") ||
+            prompt.Contains("kontrat") || prompt.Contains("sözleşme") || prompt.Contains("sozlesme") || prompt.Contains("biten"))
+        {
+            var m = Regex.Match(prompt, @"\b(202[5-9])\b");
+            if (m.Success && int.TryParse(m.Groups[1].Value, out int yr)) return yr;
+        }
+        return null;
+    }
+
+    private static decimal ExtractPercentageCutoff(string prompt, string pattern)
+    {
+        var m = Regex.Match(prompt, pattern);
+        if (!m.Success) return 0m;
+        string raw = !string.IsNullOrEmpty(m.Groups[1].Value) ? m.Groups[1].Value : m.Groups[2].Value;
+        if (decimal.TryParse(raw, out decimal pct) && pct > 0 && pct <= 99)
+        {
+            return pct / 100m;
+        }
+        return 0m;
+    }
+
+    private static List<string> BuildParsedConstraintsList(
+        string? pos, PlayerArchetype? arch, int? maxAge, int? minHeightCm, int? contractYear,
+        decimal minPts, decimal minAst, decimal minReb, decimal minFg3, decimal minTs,
+        bool turkish, bool lowTov, bool lowFoul, bool lowUsg, bool switchable,
+        bool besiktas, bool euroFit, bool buyLow)
+    {
+        var list = new List<string>();
+        if (!string.IsNullOrEmpty(pos)) list.Add($"Position: {pos}");
+        if (arch.HasValue) list.Add($"Archetype: {arch.Value}");
+        if (maxAge.HasValue) list.Add($"Age ≤ U{maxAge.Value}");
+        if (minHeightCm.HasValue) list.Add($"Height ≥ {minHeightCm.Value}cm");
+        if (contractYear.HasValue) list.Add($"Contract ≤ {contractYear.Value}");
+        if (minPts > 0) list.Add($"PTS ≥ {minPts}");
+        if (minAst > 0) list.Add($"AST ≥ {minAst}");
+        if (minReb > 0) list.Add($"REB ≥ {minReb}");
+        if (minFg3 > 0) list.Add($"3P% ≥ {minFg3 * 100:0}%");
+        if (minTs > 0) list.Add($"TS% ≥ {minTs * 100:0}%");
+        if (turkish) list.Add("Passport: TUR (Domestic)");
+        if (lowTov) list.Add("Discipline: High AST/TOV");
+        if (lowFoul) list.Add("FIBA Foul Safe");
+        if (lowUsg) list.Add("Role: Low-Usage / Off-Ball");
+        if (switchable) list.Add("Defense: Switchable Length");
+        if (besiktas) list.Add("System: High-Press DPI");
+        if (euroFit) list.Add("System: Euro Half-Court ECI");
+        if (buyLow) list.Add("Market: Buy-Low / Sleeper");
+        return list;
     }
 }

@@ -152,6 +152,14 @@ public class BasketballReferenceScrapingStrategy : ISeasonStatSyncStrategy
                                         continue;
 
                                     var pg = kvp.Value;
+                                    // Guardrail: Skip DNP, injured, or zero-game records
+                                    if (pg.GamesPlayed <= 0 || 
+                                        (!pg.Minutes.HasValue && !pg.Points.HasValue) ||
+                                        (pg.TeamName != null && pg.TeamName.StartsWith("Did not play", StringComparison.OrdinalIgnoreCase)))
+                                    {
+                                        continue;
+                                    }
+
                                     advancedData.TryGetValue(season, out var adv);
 
                                     string rawJson = JsonSerializer.Serialize(new

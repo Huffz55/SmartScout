@@ -74,10 +74,10 @@ public class GlobalLeagueTableScrapingStrategy : IPlayerSyncStrategy, ISeasonSta
             yield break;
         }
 
-        var seasons = (_options.EuroSeasons?.Any() == true ? _options.EuroSeasons : new[] { 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026 })
-            .Where(y => filter == null || filter.ShouldProcessSeason(y))
-            .OrderBy(y => y)
-            .ToArray();
+        var baseSeasons = (_options.EuroSeasons?.Any() == true ? _options.EuroSeasons : new[] { 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026, 2027 });
+        var seasons = (filter != null && filter.Season.HasValue)
+            ? new[] { filter.Season.Value }
+            : baseSeasons.Where(y => filter == null || filter.ShouldProcessSeason(y)).OrderBy(y => y).ToArray();
 
         if (!seasons.Any())
         {
@@ -173,24 +173,31 @@ public class GlobalLeagueTableScrapingStrategy : IPlayerSyncStrategy, ISeasonSta
                         matchedPlayer = byId;
                     }
 
-                    string posToUse = !string.IsNullOrWhiteSpace(row.Position)
+                    string? rawPos = !string.IsNullOrWhiteSpace(row.Position)
                         ? row.Position
                         : (row.Metrics != null ? BasketballReferenceDomParser.InferPositionFromMetrics(row.Metrics) : "F");
+                    string posToUse = SmartScout.Application.UseCases.SeasonStats.PlayerMergeHelper.ResolvePosition(
+                        matchedPlayer?.Position,
+                        rawPos) ?? "F";
 
-                    string natToUse = (!string.IsNullOrWhiteSpace(row.Nationality)
+                    string? detectedNat = !string.IsNullOrWhiteSpace(row.Nationality)
                         ? row.Nationality
-                        : EuroLeagueParserHelper.DetectNationality(row.FirstName, row.LastName, row.TeamName)) ?? "INTL";
+                        : (Player.DetectNationality(row.FirstName, row.LastName, row.TeamName)
+                            ?? EuroLeagueParserHelper.DetectNationality(row.FirstName, row.LastName, row.TeamName));
+                    string natToUse = SmartScout.Application.UseCases.SeasonStats.PlayerMergeHelper.ResolveNationality(
+                        matchedPlayer?.Nationality,
+                        detectedNat,
+                        row.FirstName,
+                        row.LastName,
+                        row.TeamName);
 
                     int? ageToUse = row.Age ?? row.Metrics?.Age;
-                    DateTime? birthDateToSet = null;
-                    if (ageToUse.HasValue && ageToUse.Value > 0)
-                    {
-                        birthDateToSet = new DateTime(year - ageToUse.Value, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-                    }
-                    else if (matchedPlayer?.BirthDate != null)
-                    {
-                        birthDateToSet = matchedPlayer.BirthDate;
-                    }
+                    DateTime? estimatedBirthDate = (ageToUse.HasValue && ageToUse.Value > 0)
+                        ? new DateTime(year - ageToUse.Value, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+                        : null;
+                    DateTime? birthDateToSet = SmartScout.Application.UseCases.SeasonStats.PlayerMergeHelper.ResolveBirthDate(
+                        matchedPlayer?.BirthDate,
+                        estimatedBirthDate);
 
                     string teamToUse = (!string.IsNullOrWhiteSpace(row.TeamName) && !row.TeamName.EndsWith("Team", StringComparison.OrdinalIgnoreCase))
                         ? row.TeamName
@@ -238,12 +245,12 @@ public class GlobalLeagueTableScrapingStrategy : IPlayerSyncStrategy, ISeasonSta
                             teamToUse,
                             leagueDef.LeagueCode,
                             nationality: natToUse,
-                            birthDate: birthDateToSet ?? matchedPlayer.BirthDate);
+                            birthDate: birthDateToSet);
                     }
 
                     discoveredPlayers.Add(matchedPlayer);
 
-                    if (!playersOnly && row.Metrics != null)
+                    if (!playersOnly && row.Metrics != null && row.Metrics.GamesPlayed > 0)
                     {
                         var pg = row.Metrics;
                         string rawJson = JsonSerializer.Serialize(new
@@ -330,21 +337,72 @@ public class GlobalLeagueTableScrapingStrategy : IPlayerSyncStrategy, ISeasonSta
             effectiveUrl = fallbackUrl;
         }
 
-        // If RealGM table returned 100 players, fetch page 2 to capture full roster depth
-        if (rows.Count >= 100 && effectiveUrl.Contains("realgm.com", StringComparison.OrdinalIgnoreCase) && effectiveUrl.Contains("/desc/1/"))
+        // If RealGM table returned a full page (100 rows), click through Bootstrap Table pagination controls
+        if (rows.Count >= 100 && effectiveUrl.Contains("realgm.com", StringComparison.OrdinalIgnoreCase))
         {
-            string page2Url = effectiveUrl.Replace("/desc/1/", "/desc/2/");
-            try
+            var seenKeys = new HashSet<string>(
+                rows.Select(r => $"{r.FirstName}|{r.LastName}|{r.TeamName}"),
+                StringComparer.OrdinalIgnoreCase);
+
+            int maxPages = string.Equals(leagueCode, "NCAAD1", StringComparison.OrdinalIgnoreCase) ? 5 : 10;
+            for (int nextPage = 2; nextPage <= maxPages; nextPage++)
             {
-                var page2Rows = await TryScrapeSingleUrlWithPollyRetryAsync(page, leagueCode, page2Url, safeDelayMs, cancellationToken);
-                if (page2Rows.Count > 0)
+                if (cancellationToken.IsCancellationRequested) break;
+
+                try
                 {
-                    rows.AddRange(page2Rows);
+                    var nextBtn = page.Locator($"ul.pagination a[aria-label='to page {nextPage}']");
+                    if (await nextBtn.CountAsync() == 0)
+                        break;
+
+                    string prevInfo = await page.Locator(".pagination-info").First.InnerTextAsync()
+                        .ContinueWith(t => t.IsCompletedSuccessfully ? t.Result.Trim() : string.Empty, cancellationToken);
+
+                    await nextBtn.First.ClickAsync();
+
+                    try
+                    {
+                        await page.WaitForFunctionAsync(
+                            "prev => { const el = document.querySelector('.pagination-info'); return el && el.innerText.trim() !== prev && !el.innerText.includes('Loading'); }",
+                            prevInfo,
+                            new PageWaitForFunctionOptions { Timeout = 10000 });
+                    }
+                    catch (TimeoutException)
+                    {
+                        break;
+                    }
+
+                    await Task.Delay(350, cancellationToken);
+
+                    string pageHtml = await page.ContentAsync();
+                    var pageDoc = new HtmlDocument();
+                    pageDoc.LoadHtml(pageHtml);
+                    var nextRows = _domParser.ParseLeagueSeasonTable(pageDoc, leagueCode);
+                    if (nextRows.Count == 0)
+                        break;
+
+                    int addedOnPage = 0;
+                    foreach (var nr in nextRows)
+                    {
+                        if (seenKeys.Add($"{nr.FirstName}|{nr.LastName}|{nr.TeamName}"))
+                        {
+                            rows.Add(nr);
+                            addedOnPage++;
+                        }
+                    }
+
+                    if (addedOnPage == 0 || nextRows.Count < 100)
+                        break;
                 }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "Could not fetch RealGM page 2 for {Url}", page2Url);
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Stopping RealGM pagination at page {Page} for {League} {Year}", nextPage, leagueCode, year);
+                    break;
+                }
             }
         }
 

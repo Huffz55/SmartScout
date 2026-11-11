@@ -40,14 +40,30 @@ public class SmartScoutSearchQueryHandler : IRequestHandler<SmartScoutSearchQuer
             .Include(s => s.Player)
             .Where(s => s.GamesPlayed >= 3);
 
+        string cleanPrompt = request.Prompt.ToLowerInvariant();
+        bool wantsBuyLowHistory = cleanPrompt.Contains("uyuyan") || cleanPrompt.Contains("buy low") || cleanPrompt.Contains("buy-low") ||
+                                  cleanPrompt.Contains("bounce back") || cleanPrompt.Contains("bounce-back") || cleanPrompt.Contains("parlaya") ||
+                                  cleanPrompt.Contains("patlama") || cleanPrompt.Contains("sleeper") || cleanPrompt.Contains("undervalued") ||
+                                  cleanPrompt.Contains("firsat") || cleanPrompt.Contains("fırsat") || cleanPrompt.Contains("potansiyel") ||
+                                  cleanPrompt.Contains("eskiden") || cleanPrompt.Contains("gecmiste") || cleanPrompt.Contains("geçmişte");
+
         if (request.Season.HasValue)
         {
-            query = query.Where(s => s.Season == request.Season.Value);
+            if (wantsBuyLowHistory)
+            {
+                // Include recent prior seasons so Buy-Low / Bounce-Back index can compare current form vs prior peak
+                int targetYear = request.Season.Value;
+                query = query.Where(s => s.Season <= targetYear && s.Season >= targetYear - 3);
+            }
+            else
+            {
+                query = query.Where(s => s.Season == request.Season.Value);
+            }
         }
 
         var candidates = await query.ToListAsync(cancellationToken);
 
-        var results = _searchEngine.Search(request.Prompt, candidates, request.Top);
+        var results = _searchEngine.Search(request.Prompt, candidates, request.Top, request.Season);
 
         _cache.Set(cacheKey, results, TimeSpan.FromMinutes(15));
 

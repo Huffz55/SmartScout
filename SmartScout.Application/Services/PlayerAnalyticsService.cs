@@ -18,18 +18,17 @@ public class PlayerAnalyticsService : IPlayerAnalyticsService
 
     private static readonly FeatureDefinition[] FeatureVector =
     {
-        new(s => s.Points, 0.0, 35.0, 1.2),
-        new(s => s.Assists, 0.0, 12.0, 1.1),
-        new(s => s.Rebounds, 0.0, 15.0, 1.0),
-        new(s => s.Steals, 0.0, 2.5, 0.8),
-        new(s => s.Blocks, 0.0, 3.5, 0.8),
-        new(s => s.Fg3Pct, 0.0, 0.45, 0.9),
-        new(s => s.TrueShootingPct, 0.40, 0.70, 1.3),
-        new(s => s.UsagePct, 10.0, 40.0, 1.2),
-        new(s => s.PlayerEfficiencyRating, 5.0, 32.0, 1.4),
-        new(s => s.BoxPlusMinus, -8.0, 12.0, 1.2),
-        new(s => s.WinShares, -1.0, 16.0, 1.0),
-        new(s => s.Minutes, 5.0, 40.0, 0.6)
+        new(s => s.PtsPer36 ?? (s.Minutes > 0 ? (s.Points / s.Minutes) * 36m : null), 4.0, 32.0, 1.4),
+        new(s => s.AstPer36 ?? (s.Minutes > 0 ? (s.Assists / s.Minutes) * 36m : null), 0.5, 12.0, 1.3),
+        new(s => s.RebPer36 ?? (s.Minutes > 0 ? (s.Rebounds / s.Minutes) * 36m : null), 1.0, 16.0, 1.2),
+        new(s => s.StocksPer36 ?? ((s.StlPer36 ?? 0m) + (s.BlkPer36 ?? 0m)), 0.2, 5.0, 1.1),
+        new(s => s.TrueShootingPct, 0.42, 0.68, 1.5),
+        new(s => s.ThreePointRate, 0.05, 0.70, 1.0),
+        new(s => s.Fg3Pct, 0.20, 0.45, 0.9),
+        new(s => s.AssistToTurnoverRatio, 0.6, 3.5, 1.2),
+        new(s => s.GameScoreAverage, 2.0, 22.0, 1.3),
+        new(s => s.UsagePct, 12.0, 36.0, 1.2),
+        new(s => s.Pir, 2.0, 28.0, 1.1)
     };
 
     public double CalculateSimilarity(PlayerSeasonStat target, PlayerSeasonStat candidate)
@@ -39,13 +38,22 @@ public class PlayerAnalyticsService : IPlayerAnalyticsService
 
         foreach (var feature in FeatureVector)
         {
-            double valTarget = Normalize(feature.Selector(target), feature.Min, feature.Max);
-            double valCandidate = Normalize(feature.Selector(candidate), feature.Min, feature.Max);
+            var rawTarget = feature.Selector(target);
+            var rawCandidate = feature.Selector(candidate);
+
+            // Skip metric if missing on either side to maintain pure fair cross-league comparison
+            if (!rawTarget.HasValue || !rawCandidate.HasValue)
+                continue;
+
+            double valTarget = Normalize(rawTarget, feature.Min, feature.Max);
+            double valCandidate = Normalize(rawCandidate, feature.Min, feature.Max);
 
             double diff = valTarget - valCandidate;
             sumWeightedSqDiff += feature.Weight * (diff * diff);
             totalWeight += feature.Weight;
         }
+
+        if (totalWeight <= 0.0) return 50.0;
 
         double normalizedDistance = Math.Sqrt(sumWeightedSqDiff / totalWeight);
         double similarityScore = Math.Max(0.0, Math.Min(100.0, (1.0 - normalizedDistance) * 100.0));
@@ -152,8 +160,20 @@ public class PlayerAnalyticsService : IPlayerAnalyticsService
             ["TrueShootingPct"] = (statA.TrueShootingPct ?? 0) - (statB.TrueShootingPct ?? 0),
             ["PER"] = (statA.PlayerEfficiencyRating ?? 0) - (statB.PlayerEfficiencyRating ?? 0),
             ["WinShares"] = (statA.WinShares ?? 0) - (statB.WinShares ?? 0),
-            ["BPM"] = (statA.BoxPlusMinus ?? 0) - (statB.BoxPlusMinus ?? 0)
+            ["BPM"] = (statA.BoxPlusMinus ?? 0) - (statB.BoxPlusMinus ?? 0),
+            ["PtsPer36"] = (profileA.PtsPer36 ?? 0) - (profileB.PtsPer36 ?? 0),
+            ["AstPer36"] = (profileA.AstPer36 ?? 0) - (profileB.AstPer36 ?? 0),
+            ["RebPer36"] = (profileA.RebPer36 ?? 0) - (profileB.RebPer36 ?? 0),
+            ["StocksPer36"] = (profileA.StocksPer36 ?? 0) - (profileB.StocksPer36 ?? 0),
+            ["Pir"] = (statA.Pir ?? 0) - (statB.Pir ?? 0),
+            ["ETI"] = (profileA.EuroLeagueTransitionIndex ?? 0) - (profileB.EuroLeagueTransitionIndex ?? 0)
         };
+
+        int winsA = categoryWinners.Values.Count(v => v == profileA.FullName);
+        int winsB = categoryWinners.Values.Count(v => v == profileB.FullName);
+        string overallLeader = winsA >= winsB ? profileA.FullName : profileB.FullName;
+        string verdict = $"{overallLeader} leads in {Math.Max(winsA, winsB)} of 6 core scouting dimensions (Profile Similarity: {similarity:0.0}%). " +
+                         $"{profileA.FullName} profiles as a {profileA.Archetype} ({profileA.EuroLeagueTransitionIndex ?? 65m:0.0} ETI) while {profileB.FullName} operates as a {profileB.Archetype} ({profileB.EuroLeagueTransitionIndex ?? 65m:0.0} ETI).";
 
         return new PlayerComparisonDto
         {
@@ -161,12 +181,19 @@ public class PlayerAnalyticsService : IPlayerAnalyticsService
             PlayerB = profileB,
             SimilarityScore = similarity,
             CategoryWinners = categoryWinners,
-            Differentials = differentials
+            Differentials = differentials,
+            ScoutingVerdict = verdict
         };
     }
 
     private PlayerComparisonProfileDto CreateProfile(PlayerSeasonStat stat, Player player)
     {
+        decimal min = stat.Minutes ?? 0m;
+        decimal? pts36 = stat.PtsPer36 ?? (min > 0 && stat.Points.HasValue ? Math.Round((stat.Points.Value / min) * 36m, 1) : null);
+        decimal? ast36 = stat.AstPer36 ?? (min > 0 && stat.Assists.HasValue ? Math.Round((stat.Assists.Value / min) * 36m, 1) : null);
+        decimal? reb36 = stat.RebPer36 ?? (min > 0 && stat.Rebounds.HasValue ? Math.Round((stat.Rebounds.Value / min) * 36m, 1) : null);
+        decimal? stocks36 = stat.StocksPer36 ?? (min > 0 ? Math.Round((((stat.Steals ?? 0m) + (stat.Blocks ?? 0m)) / min) * 36m, 2) : null);
+
         return new PlayerComparisonProfileDto
         {
             PlayerId = player.Id,
@@ -199,8 +226,143 @@ public class PlayerAnalyticsService : IPlayerAnalyticsService
             EuropeanCompatibilityIndex = CalculateEuropeanCompatibilityIndex(stat),
             DefensivePressureIndex = CalculateDefensivePressureIndex(stat),
             BuyLowBounceBackIndex = CalculateBuyLowBounceBackIndex(stat, player.SeasonStats),
+            Age = player.CurrentAge,
+            HeightCm = player.HeightCm,
+            WeightKg = player.WeightKg,
+            WingspanCm = player.WingspanCm,
+            StandingReachCm = player.StandingReachCm,
+            ContractExpirySeason = player.ContractExpirySeason,
+            EstimatedMarketValueTier = player.EstimatedMarketValueTier,
+            PtsPer36 = pts36,
+            AstPer36 = ast36,
+            RebPer36 = reb36,
+            StocksPer36 = stocks36,
+            ThreePointRate = stat.ThreePointRate,
+            AssistToTurnoverRatio = stat.AssistToTurnoverRatio,
+            EuroLeagueTransitionIndex = stat.EuroLeagueTransitionIndex,
+            Percentiles = CalculatePositionalPercentiles(stat, player.Position),
             RadarMetrics = CalculateRadarMetrics(stat)
         };
+    }
+
+    public Dictionary<string, int> CalculatePositionalPercentiles(PlayerSeasonStat stat, string? position = null)
+    {
+        string pos = (position ?? stat.Player?.Position ?? "G").ToUpperInvariant();
+        bool isCenter = pos.Contains('C');
+        bool isForward = !isCenter && pos.Contains('F');
+
+        decimal min = stat.Minutes ?? 20m;
+        double pts36 = (double)(stat.PtsPer36 ?? (min > 0 ? ((stat.Points ?? 0m) / min) * 36m : 12m));
+        double ast36 = (double)(stat.AstPer36 ?? (min > 0 ? ((stat.Assists ?? 0m) / min) * 36m : 2.5m));
+        double reb36 = (double)(stat.RebPer36 ?? (min > 0 ? ((stat.Rebounds ?? 0m) / min) * 36m : 4.5m));
+        double stocks36 = (double)(stat.StocksPer36 ?? ((stat.StlPer36 ?? 0.8m) + (stat.BlkPer36 ?? 0.4m)));
+        double ts = (double)(stat.TrueShootingPct ?? 0.54m);
+        double fg3 = (double)(stat.Fg3Pct ?? 0.33m);
+        double astTov = (double)(stat.AssistToTurnoverRatio ?? 1.4m);
+        double tpr = (double)(stat.ThreePointRate ?? 0.32m);
+
+        decimal fga = (stat.TwoPointsAttempted ?? 0m) + (stat.ThreePointsAttempted ?? 0m);
+        double ftr = fga > 0 && stat.FreeThrowsAttempted.HasValue
+            ? (double)(stat.FreeThrowsAttempted.Value / fga)
+            : (double)((stat.FoulsDrawn ?? 2.2m) / 10m);
+
+        double pf36 = min > 0 && stat.PersonalFoulsCommitted.HasValue
+            ? (double)((stat.PersonalFoulsCommitted.Value / min) * 36m)
+            : 3.2;
+
+        // Positional calibration bounds (min, max for 1st to 99th percentile)
+        (double minAst, double maxAst) = isCenter ? (0.5, 5.2) : isForward ? (1.0, 6.8) : (2.0, 9.8);
+        (double minReb, double maxReb) = isCenter ? (5.0, 14.5) : isForward ? (3.2, 11.2) : (1.5, 6.8);
+        (double minStk, double maxStk) = isCenter ? (0.8, 4.2) : isForward ? (0.7, 3.4) : (0.6, 2.9);
+        (double min3P, double max3P) = isCenter ? (0.20, 0.40) : isForward ? (0.26, 0.43) : (0.28, 0.45);
+        (double minTpr, double maxTpr) = isCenter ? (0.02, 0.45) : isForward ? (0.15, 0.62) : (0.22, 0.70);
+
+        return new Dictionary<string, int>
+        {
+            ["Points"] = ToPercentile((double)(stat.Points ?? 0m), 4.0, 22.0),
+            ["PtsPer36"] = ToPercentile(pts36, 7.0, 26.5),
+            ["TrueShootingPct"] = ToPercentile(ts, 0.46, 0.66),
+            ["Fg3Pct"] = ToPercentile(fg3, min3P, max3P),
+            ["AstPer36"] = ToPercentile(ast36, minAst, maxAst),
+            ["RebPer36"] = ToPercentile(reb36, minReb, maxReb),
+            ["StocksPer36"] = ToPercentile(stocks36, minStk, maxStk),
+            ["AssistToTurnoverRatio"] = ToPercentile(astTov, 0.7, 3.4),
+            ["ThreePointRate"] = ToPercentile(tpr, minTpr, maxTpr),
+            ["FreeThrowRate"] = ToPercentile(ftr, 0.10, 0.52),
+            ["FoulDiscipline"] = ToPercentile(5.5 - pf36, 0.5, 3.8),
+            ["Pir"] = ToPercentile((double)(stat.Pir ?? stat.GameScoreAverage ?? 8m), 2.0, 21.0),
+            ["EuroLeagueTransitionIndex"] = ToPercentile((double)(stat.EuroLeagueTransitionIndex ?? 60m), 42.0, 92.0)
+        };
+    }
+
+    public void PopulateShotDietAndPhysicality(PlayerScoutingReportDto dto, PlayerSeasonStat stat)
+    {
+        decimal min = stat.Minutes ?? 0m;
+        decimal twoPa = stat.TwoPointsAttempted ?? 0m;
+        decimal threePa = stat.ThreePointsAttempted ?? 0m;
+        decimal fga = twoPa + threePa;
+        decimal fta = stat.FreeThrowsAttempted ?? 0m;
+
+        if (fga > 0 && fta > 0)
+        {
+            dto.FreeThrowRate = Math.Round(fta / fga, 3);
+        }
+        else if (stat.FoulsDrawn.HasValue && stat.Points.HasValue && stat.Points.Value > 0)
+        {
+            dto.FreeThrowRate = Math.Round(Math.Clamp((stat.FoulsDrawn.Value * 1.4m) / Math.Max(4m, stat.Points.Value), 0.08m, 0.65m), 3);
+        }
+
+        if (min > 0 && stat.PersonalFoulsCommitted.HasValue)
+        {
+            dto.FoulsCommittedPer36 = Math.Round((stat.PersonalFoulsCommitted.Value / min) * 36m, 2);
+        }
+
+        if (stat.FoulsDrawn.HasValue && stat.PersonalFoulsCommitted.HasValue)
+        {
+            dto.NetFoulDifferential = Math.Round(stat.FoulsDrawn.Value - stat.PersonalFoulsCommitted.Value, 2);
+        }
+
+        if (stat.OffensiveRebounds.HasValue && stat.Rebounds.HasValue && stat.Rebounds.Value > 0)
+        {
+            dto.OffensiveReboundShare = Math.Round(Math.Clamp(stat.OffensiveRebounds.Value / stat.Rebounds.Value, 0m, 1m), 3);
+        }
+
+        // Scoring Split (2PT vs 3PT vs FT points share)
+        decimal pts2 = (stat.TwoPointsMade ?? 0m) * 2m;
+        decimal pts3 = (stat.ThreePointsMade ?? 0m) * 3m;
+        decimal ptsFt = stat.FreeThrowsMade ?? 0m;
+        decimal totalCalcPts = pts2 + pts3 + ptsFt;
+
+        if (totalCalcPts > 0)
+        {
+            dto.TwoPointScoringSharePct = Math.Round((double)(pts2 / totalCalcPts) * 100.0, 1);
+            dto.ThreePointScoringSharePct = Math.Round((double)(pts3 / totalCalcPts) * 100.0, 1);
+            dto.FreeThrowScoringSharePct = Math.Round(Math.Max(0.0, 100.0 - dto.TwoPointScoringSharePct - dto.ThreePointScoringSharePct), 1);
+        }
+        else
+        {
+            double tpr = (double)(stat.ThreePointRate ?? 0.35m);
+            double ftShare = 16.0;
+            double threeShare = Math.Round(Math.Clamp(tpr * 85.0, 5.0, 68.0), 1);
+            double twoShare = Math.Round(100.0 - threeShare - ftShare, 1);
+            dto.TwoPointScoringSharePct = twoShare;
+            dto.ThreePointScoringSharePct = threeShare;
+            dto.FreeThrowScoringSharePct = ftShare;
+        }
+
+        decimal pf36 = dto.FoulsCommittedPer36 ?? 3.0m;
+        dto.FibaFoulTroubleRisk = pf36 >= 4.3m
+            ? "High Foul Risk"
+            : pf36 >= 3.4m
+                ? "Moderate"
+                : "Low Risk";
+    }
+
+    private static int ToPercentile(double value, double min, double max)
+    {
+        if (max <= min) return 50;
+        double ratio = (value - min) / (max - min);
+        return (int)Math.Round(Math.Clamp(ratio * 98.0 + 1.0, 1.0, 99.0));
     }
 
     public double CalculateEuropeanCompatibilityIndex(PlayerSeasonStat stat)
@@ -279,24 +441,31 @@ public class PlayerAnalyticsService : IPlayerAnalyticsService
 
         double curPts = (double)(currentStat.Points ?? 0m);
         double curMin = (double)(currentStat.Minutes ?? 20m);
-        double ptsPer40 = (double)(currentStat.PointsPer40 ?? (curMin > 0 ? (decimal)(curPts / curMin * 40.0) : 0m));
-        double astPer40 = (double)(currentStat.AssistsPer40 ?? (curMin > 0 ? (decimal)((double)(currentStat.Assists ?? 0m) / curMin * 40.0) : 0m));
-        double ts = (double)(currentStat.TrueShootingPct ?? 0.54m);
-        double fg3 = (double)(currentStat.Fg3Pct ?? 0.33m);
+        double ptsPer40 = Math.Min(35.0, (double)(currentStat.PointsPer40 ?? (curMin > 0 ? (decimal)(curPts / curMin * 40.0) : 0m)));
+        double astPer40 = Math.Min(12.0, (double)(currentStat.AssistsPer40 ?? (curMin > 0 ? (decimal)((double)(currentStat.Assists ?? 0m) / curMin * 40.0) : 0m)));
+        double ts = Math.Min(0.75, Math.Max(0.0, (double)(currentStat.TrueShootingPct ?? 0.54m)));
+        double fg3 = Math.Min(0.55, Math.Max(0.0, (double)(currentStat.Fg3Pct ?? 0.33m)));
+
+        // Sample & minute reliability shrinkage: prevent 3-MPG / 4-GP garbage-time noise from hitting 100
+        double minuteReliability = curMin >= 10.0 ? 1.0 : Math.Max(0.25, curMin / 10.0);
+        double gpReliability = currentStat.GamesPlayed >= 10 ? 1.0 : Math.Max(0.45, currentStat.GamesPlayed / 10.0);
+        double reliability = minuteReliability * (0.40 + 0.60 * gpReliability);
 
         // Signal B: Per-40 Underutilized Gem Score (high per-minute efficiency in limited/moderate playing time)
         double per40OffenseScore = Clamp100(((ptsPer40 + (astPer40 * 1.2) - 12.0) / (30.0 - 12.0)) * 100.0);
         double efficiencyRetainedScore = Clamp100((((ts - 0.48) / 0.16) * 0.6 + ((fg3 - 0.28) / 0.14) * 0.4) * 100.0);
-        double roleDiscountFactor = curMin <= 22.0 
-            ? Clamp100(((26.0 - curMin) / 14.0) * 100.0) 
-            : Clamp100(((32.0 - curMin) / 18.0) * 60.0);
+        double roleDiscountFactor = curMin <= 22.0
+            ? Clamp100(((26.0 - curMin) / 14.0) * 100.0)
+            : curMin < 28.0
+                ? Clamp100(((28.0 - curMin) / 10.0) * 35.0)
+                : 0.0;
 
-        double underutilizedGemScore = (per40OffenseScore * 0.45) + (efficiencyRetainedScore * 0.30) + (roleDiscountFactor * 0.25);
+        double underutilizedGemScore = ((per40OffenseScore * 0.45) + (efficiencyRetainedScore * 0.30) + (roleDiscountFactor * 0.25)) * reliability;
 
-        // Signal A: Multi-Season Career Peak vs Current Dip
+        // Signal A: Multi-Season Career Peak vs Current Dip (recent 3-year window prior to current season)
         double multiSeasonBounceBackScore = 0.0;
         var historyList = (careerHistory ?? currentStat.Player?.SeasonStats)?
-            .Where(s => s.Season != currentStat.Season && s.GamesPlayed >= 5)
+            .Where(s => s.Season < currentStat.Season && s.Season >= currentStat.Season - 3 && s.GamesPlayed >= 5)
             .ToList();
 
         if (historyList != null && historyList.Any())
@@ -319,7 +488,7 @@ public class PlayerAnalyticsService : IPlayerAnalyticsService
                 // 3. Underlying Skill Retention (25%): Per-40 output & shooting efficiency still intact
                 double skillIntactScore = (per40OffenseScore * 0.5) + (efficiencyRetainedScore * 0.5);
 
-                multiSeasonBounceBackScore = (ceilingScore * 0.40) + (discountScore * 0.35) + (skillIntactScore * 0.25);
+                multiSeasonBounceBackScore = ((ceilingScore * 0.40) + (discountScore * 0.35) + (skillIntactScore * 0.25)) * (0.55 + 0.45 * reliability);
             }
         }
 

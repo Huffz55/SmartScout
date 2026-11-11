@@ -261,6 +261,123 @@ public class SleeperScoutingAndSchemaTests
     }
 
     [Fact]
+    public void SleeperScoutingService_ShouldExcludeEstablishedNbaStars_AndProperlyFormatTwoWayProspects()
+    {
+        // 1. Established NBA Star (Zion Williamson: 31.5 MPG, 22.9 PPG) -> MUST NOT be in sleepers
+        var zion = new Player(987867, "Zion", "Williamson", "PF", "6-6", 284, "New Orleans Pelicans", "NBA");
+        var zion2021 = new PlayerSeasonStat(zion.Id, 2021, 61, 33.2m, 27.0m, 3.7m, 7.2m, 0.9m, 0.6m, 0.611m, 0.294m, 0.698m, 2.7m, trueShootingPct: 0.649m, pir: 27.1m, league: "NBA", teamName: "NOP");
+        var zion2024 = new PlayerSeasonStat(zion.Id, 2024, 70, 31.5m, 22.9m, 5.0m, 5.8m, 1.1m, 0.7m, 0.570m, 0.333m, 0.702m, 2.8m, trueShootingPct: 0.610m, pir: 22.8m, league: "NBA", teamName: "NOP");
+        typeof(PlayerSeasonStat).GetProperty("Player")!.SetValue(zion2021, zion);
+        typeof(PlayerSeasonStat).GetProperty("Player")!.SetValue(zion2024, zion);
+
+        // 2. Two-Way G-League Sleeper (JD Davison: 16 GP, 34.2 MPG, 22.7 PPG in GLeague + 8 GP in NBA with Boston)
+        var jd = new Player(1179998, "JD", "Davison", "PG", "6-1", 195, "BOS", "NBA");
+        var jdNba = new PlayerSeasonStat(jd.Id, 2024, 8, 4.9m, 2.0m, 1.3m, 1.3m, 0.1m, 0.1m, 0.417m, 0.429m, 0.750m, 0.5m, league: "NBA", teamName: "BOS");
+        var jdGleague = new PlayerSeasonStat(jd.Id, 2024, 16, 34.2m, 22.7m, 8.6m, 5.3m, 1.4m, 0.6m, 0.470m, 0.380m, 0.720m, 3.1m, trueShootingPct: 0.600m, pir: 23.5m, league: "GLeague", teamName: "MNE", fg3a: 5.0m);
+        typeof(PlayerSeasonStat).GetProperty("Player")!.SetValue(jdNba, jd);
+        typeof(PlayerSeasonStat).GetProperty("Player")!.SetValue(jdGleague, jd);
+
+        var list = new List<PlayerSeasonStat> { zion2021, zion2024, jdNba, jdGleague };
+        var sleepers = _sleeperService.DiscoverSleepers(list, seasonFilter: 2024, top: 10);
+
+        // Assert: Zion must be completely excluded
+        Assert.DoesNotContain(sleepers, s => s.FullName.Contains("Zion", StringComparison.OrdinalIgnoreCase));
+
+        // Assert: JD Davison should be detected with Two-Way context and expanded team name
+        var jdSleeper = Assert.Single(sleepers, s => s.FullName.Contains("Davison", StringComparison.OrdinalIgnoreCase));
+        Assert.True(jdSleeper.IsTwoWayPlayer);
+        Assert.Contains("Boston Celtics", jdSleeper.TeamName);
+        Assert.Contains("Maine Celtics", jdSleeper.TeamName);
+    }
+
+    [Fact]
+    public void SleeperScoutingService_MultiSeasonAggregate_ShouldCalculateWeightedAveragesAndConsistencyBonus()
+    {
+        // Player with 3 modern seasons of steady high-efficiency bench production
+        var p = new Player(88001, "Sandro", "MamukelashviliClone", "C", "6-10", 240, "SAS", "NBA", birthDate: new DateTime(1999, 5, 23, 0, 0, 0, DateTimeKind.Utc));
+        var s2023 = new PlayerSeasonStat(p.Id, 2023, 24, 18.0m, 9.5m, 2.2m, 6.0m, 0.6m, 0.4m, 0.490m, 0.350m, 0.720m, 1.2m, trueShootingPct: 0.580m, pir: 13.5m, league: "NBA", teamName: "SAS");
+        var s2024 = new PlayerSeasonStat(p.Id, 2024, 46, 13.0m, 6.1m, 1.5m, 4.2m, 0.4m, 0.3m, 0.470m, 0.330m, 0.780m, 0.8m, trueShootingPct: 0.575m, pir: 11.2m, league: "NBA", teamName: "SAS");
+        var s2025 = new PlayerSeasonStat(p.Id, 2025, 40, 14.5m, 7.8m, 1.8m, 5.0m, 0.5m, 0.4m, 0.505m, 0.360m, 0.750m, 0.9m, trueShootingPct: 0.605m, pir: 14.0m, league: "NBA", teamName: "SAS");
+        typeof(PlayerSeasonStat).GetProperty("Player")!.SetValue(s2023, p);
+        typeof(PlayerSeasonStat).GetProperty("Player")!.SetValue(s2024, p);
+        typeof(PlayerSeasonStat).GetProperty("Player")!.SetValue(s2025, p);
+
+        var list = new List<PlayerSeasonStat> { s2023, s2024, s2025 };
+        // seasonFilter = 0 triggers Multi-Season Career Aggregate
+        var multiSeasonSleepers = _sleeperService.DiscoverSleepers(list, seasonFilter: 0, top: 10);
+
+        Assert.NotEmpty(multiSeasonSleepers);
+        var res = Assert.Single(multiSeasonSleepers, s => s.PlayerId == p.Id);
+        Assert.Equal("MultiSeasonConsistency", res.SleeperCategory);
+        Assert.Equal(110, res.GamesPlayed); // 24 + 46 + 40 = 110 games total sample
+        Assert.Contains("Stability", res.PeakSeasonContext);
+        Assert.True(res.TrueShootingPct > 0.57m);
+    }
+
+    [Fact]
+    public void SleeperScoutingService_MultiSeason_ShouldExcludeInactiveVeterans_AndTinySampleProspects()
+    {
+        // 1. Jimmer Fredette: Played only in 2020 (18 GP), 37 years old today -> MUST BE EXCLUDED from modern multi-season sleepers
+        var jimmer = new Player(7701, "Jimmer", "Fredette", "G", "6-2", 195, "Panathinaikos OPAP", "GBL");
+        var jimmerStat = new PlayerSeasonStat(jimmer.Id, 2020, 18, 19.0m, 13.0m, 3.3m, 1.8m, 0.8m, 0.2m, 0.520m, 0.410m, 0.950m, 1.2m, trueShootingPct: 0.821m, pir: 16.0m, league: "GBL", teamName: "Panathinaikos OPAP");
+        typeof(PlayerSeasonStat).GetProperty("Player")!.SetValue(jimmerStat, jimmer);
+
+        // 2. Tiny sample player (< 35 total GP): Played only 18 total GP across 2025/2026 -> MUST BE EXCLUDED from multi-season consistency
+        var tinyPlayer = new Player(7702, "N'Faly", "Dante", "C", "6-11", 265, "Houston Rockets", "NBA", birthDate: new DateTime(2001, 10, 19, 0, 0, 0, DateTimeKind.Utc));
+        var tinyStat1 = new PlayerSeasonStat(tinyPlayer.Id, 2025, 11, 20.5m, 10.5m, 1.0m, 9.0m, 0.5m, 1.5m, 0.700m, 0.0m, 0.650m, 1.0m, trueShootingPct: 0.750m, pir: 19.0m, league: "GLeague", teamName: "RGV");
+        var tinyStat2 = new PlayerSeasonStat(tinyPlayer.Id, 2026, 4, 12.0m, 5.0m, 0.5m, 4.0m, 0.2m, 0.8m, 0.650m, 0.0m, 0.600m, 0.5m, trueShootingPct: 0.700m, pir: 12.0m, league: "NBA", teamName: "HOU");
+        typeof(PlayerSeasonStat).GetProperty("Player")!.SetValue(tinyStat1, tinyPlayer);
+        typeof(PlayerSeasonStat).GetProperty("Player")!.SetValue(tinyStat2, tinyPlayer);
+
+        // 3. Valid modern rotation sleeper (Luka Garza: 4 seasons, 140 GP, active 2025, age 27)
+        var garza = new Player(7703, "Luka", "Garza", "C", "6-10", 243, "Minnesota Timberwolves", "NBA", birthDate: new DateTime(1998, 12, 27, 0, 0, 0, DateTimeKind.Utc));
+        var garza2024 = new PlayerSeasonStat(garza.Id, 2024, 25, 10.2m, 7.2m, 0.6m, 2.5m, 0.2m, 0.1m, 0.480m, 0.280m, 0.720m, 0.5m, trueShootingPct: 0.590m, pir: 8.5m, league: "NBA", teamName: "MIN");
+        var garza2025 = new PlayerSeasonStat(garza.Id, 2025, 45, 12.0m, 8.5m, 0.8m, 3.2m, 0.3m, 0.2m, 0.510m, 0.310m, 0.760m, 0.6m, trueShootingPct: 0.610m, pir: 9.8m, league: "NBA", teamName: "MIN");
+        typeof(PlayerSeasonStat).GetProperty("Player")!.SetValue(garza2024, garza);
+        typeof(PlayerSeasonStat).GetProperty("Player")!.SetValue(garza2025, garza);
+
+        var list = new List<PlayerSeasonStat> { jimmerStat, tinyStat1, tinyStat2, garza2024, garza2025 };
+        var sleepers = _sleeperService.DiscoverSleepers(list, seasonFilter: 0, top: 10);
+
+        // Assert: Jimmer Fredette (maxSeason=2020, 1 season) and tiny sample player (15 total GP) are NOT returned
+        Assert.DoesNotContain(sleepers, s => s.FullName.Contains("Jimmer", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(sleepers, s => s.FullName.Contains("Dante", StringComparison.OrdinalIgnoreCase));
+
+        // Assert: Luka Garza is discovered as a valid modern multi-season sleeper
+        var garzaResult = Assert.Single(sleepers, s => s.FullName.Contains("Garza", StringComparison.OrdinalIgnoreCase));
+        Assert.Equal("MultiSeasonConsistency", garzaResult.SleeperCategory);
+        Assert.Equal(70, garzaResult.GamesPlayed);
+    }
+
+    [Fact]
+    public void Player_CurrentAge_ShouldDynamicallyComputeFromBirthDate_AndU22FilterMustExcludeVeterans()
+    {
+        // 1. Veteran Milos Teodosic (born 1987-03-19) -> Age ~39
+        var teodosic = new Player(1099, "Milos", "Teodosic", "G", "6-5", 196, "Crvena zvezda", "ABA", birthDate: new DateTime(1987, 3, 19, 0, 0, 0, DateTimeKind.Utc));
+        Assert.NotNull(teodosic.CurrentAge);
+        Assert.True(teodosic.CurrentAge >= 38);
+
+        // 2. Young Core Prospect (born 2004-05-15) -> Age ~21-22
+        var youngGun = new Player(1100, "Nikola", "TopicClone", "PG", "6-6", 200, "Mega MIS", "ABA", birthDate: new DateTime(2004, 5, 15, 0, 0, 0, DateTimeKind.Utc));
+        Assert.NotNull(youngGun.CurrentAge);
+        Assert.True(youngGun.CurrentAge <= 22);
+
+        // 3. Player with missing BirthDate
+        var unknownPlayer = new Player(1101, "Ghost", "Prospect", "F", "6-7", 210, "Partizan", "ABA", birthDate: null);
+        Assert.Null(unknownPlayer.CurrentAge);
+
+        // Age filter defensive logic:
+        int maxAgeCap = 22;
+        var players = new List<Player> { teodosic, youngGun, unknownPlayer };
+        var u22Qualified = players.Where(p => p.CurrentAge.HasValue && p.CurrentAge.Value <= maxAgeCap).ToList();
+
+        Assert.Single(u22Qualified);
+        Assert.Equal("Nikola TopicClone", u22Qualified.First().FullName);
+        Assert.DoesNotContain(u22Qualified, p => p.FullName.Contains("Teodosic"));
+        Assert.DoesNotContain(u22Qualified, p => p.FullName.Contains("Ghost"));
+    }
+
+    [Fact]
     public void GlobalLeagueEndpointCatalog_ShouldMapAll15SeededLeaguesWithValidUrls()
     {
         var seededLeagues = BasketballLeague.GetDefaultSeedLeagues();
@@ -1015,5 +1132,214 @@ public class SleeperScoutingAndSchemaTests
             var command = new SyncSeasonStatsCommand { League = "NBA", Season = seasonYear.ToString(), Force = true };
             await handler.Handle(command, CancellationToken.None);
         }
+    }
+
+    [Fact]
+    public void Player_WatchlistAndNotes_CanBeUpdatedAndToggled()
+    {
+        var player = new Player(88001, "Tarik", "Biberovic", "SF", "6-7", 218, "Fenerbahce Beko", "EuroLeague");
+        
+        Assert.False(player.IsWatchlisted);
+        Assert.Null(player.ScoutNotes);
+
+        player.ToggleWatchlist();
+        Assert.True(player.IsWatchlisted);
+
+        player.SetScoutNotes("Elite catch-and-shoot wing with modern 3-and-D size.");
+        Assert.Equal("Elite catch-and-shoot wing with modern 3-and-D size.", player.ScoutNotes);
+
+        player.UpdateScoutingIntel(
+            standingReachCm: 268,
+            contractExpirySeason: 2026,
+            estimatedMarketValueTier: "Tier 2 • EuroLeague Starter / High-Impact",
+            agencyName: "BeoBasket / Octagon");
+
+        Assert.Equal(268, player.StandingReachCm);
+        Assert.Equal(2026, player.ContractExpirySeason);
+        Assert.Equal("Tier 2 • EuroLeague Starter / High-Impact", player.EstimatedMarketValueTier);
+        Assert.Equal("BeoBasket / Octagon", player.AgencyName);
+
+        player.ToggleWatchlist();
+        Assert.False(player.IsWatchlisted);
+    }
+
+    [Fact]
+    public void StatCalculationService_CalculatesStocksPer36AndThreePointRate_Automatically()
+    {
+        var player = new Player(88002, "Mychal", "Mulder", "SG", "6-3", 184, "Capital City Go-Go", "GLeague");
+        var stat = new PlayerSeasonStat(
+            playerId: player.Id,
+            season: 2026,
+            gamesPlayed: 30,
+            minutes: 24.0m,
+            points: 12.0m,
+            assists: 3.0m,
+            rebounds: 5.0m,
+            steals: 1.2m,
+            blocks: 0.8m,
+            fgPct: 0.46m,
+            fg3Pct: 0.38m,
+            ftPct: 0.80m,
+            turnovers: 1.5m,
+            fga: 10.0m,
+            fg3a: 4.5m);
+
+        typeof(PlayerSeasonStat).GetProperty("Player")!.SetValue(stat, player);
+        StatCalculationService.EnrichAndCalculate(stat);
+
+        Assert.NotNull(stat.StocksPer36);
+        Assert.True(stat.StocksPer36 > 0m);
+        Assert.Equal(0.450m, stat.ThreePointRate); // 4.5 / 10.0
+    }
+
+    [Fact]
+    public void StatCalculationService_EuroLeagueTransitionIndex_EvaluatesLeaguesCorrectly()
+    {
+        // NBA stat -> 98.0
+        var nbaStat = new PlayerSeasonStat(Guid.NewGuid(), 2026, 60, 20.0m, 10.0m, 2.0m, 4.0m, 1.0m, 0.5m, 0.45m, 0.35m, 0.80m, 1.0m, league: "NBA");
+        var nbaEti = StatCalculationService.CalculateEuroLeagueTransitionIndex(nbaStat, 25, 201);
+        Assert.Equal(98.0m, nbaEti);
+
+        // EuroLeague stat -> 94.0
+        var elStat = new PlayerSeasonStat(Guid.NewGuid(), 2026, 30, 25.0m, 14.0m, 3.0m, 4.0m, 1.2m, 0.4m, 0.48m, 0.40m, 0.85m, 1.5m, league: "EuroLeague");
+        var elEti = StatCalculationService.CalculateEuroLeagueTransitionIndex(elStat, 26, 198);
+        Assert.Equal(94.0m, elEti);
+
+        // Tier-2 EuroCup prospect
+        var ecStat = new PlayerSeasonStat(Guid.NewGuid(), 2026, 20, 26.0m, 15.0m, 3.5m, 3.5m, 1.5m, 0.3m, 0.47m, 0.38m, 0.82m, 1.8m, league: "EuroCup");
+        var ecEti = StatCalculationService.CalculateEuroLeagueTransitionIndex(ecStat, 24, 203);
+        Assert.NotNull(ecEti);
+        Assert.True(ecEti > 75.0m && ecEti < 95.0m);
+    }
+
+    [Fact]
+    public void PlayerAnalyticsService_PositionalPercentilesAndShotDiet_ShouldComputeAccurately()
+    {
+        var analytics = new PlayerAnalyticsService();
+        var guard = new Player(91001, "Shane", "LarkinClone", "PG", "6-0", 175, "Anadolu Efes", "EuroLeague", birthDate: new DateTime(1998, 10, 2, 0, 0, 0, DateTimeKind.Utc));
+        var stat = new PlayerSeasonStat(
+            playerId: guard.Id,
+            season: 2026,
+            gamesPlayed: 28,
+            minutes: 28.0m,
+            points: 17.5m,
+            assists: 5.5m,
+            rebounds: 2.8m,
+            steals: 1.4m,
+            blocks: 0.1m,
+            fgPct: 0.48m,
+            fg3Pct: 0.41m,
+            ftPct: 0.90m,
+            turnovers: 1.8m,
+            foulsDrawn: 4.5m,
+            league: "EuroLeague",
+            teamName: "Anadolu Efes",
+            fgm: 5.5m, fga: 11.4m, fg3m: 2.8m, fg3a: 6.8m, fg2m: 2.7m, fg2a: 4.6m, ftm: 3.7m, fta: 4.1m,
+            orb: 0.6m, drb: 2.2m, pfCommitted: 1.8m);
+
+        typeof(PlayerSeasonStat).GetProperty("Player")!.SetValue(stat, guard);
+        StatCalculationService.EnrichAndCalculate(stat);
+
+        var percentiles = analytics.CalculatePositionalPercentiles(stat, "PG");
+        Assert.InRange(percentiles["PtsPer36"], 65, 99);
+        Assert.InRange(percentiles["TrueShootingPct"], 70, 99);
+        Assert.InRange(percentiles["Fg3Pct"], 70, 99);
+        Assert.InRange(percentiles["FoulDiscipline"], 60, 99);
+
+        var dto = new PlayerScoutingReportDto();
+        analytics.PopulateShotDietAndPhysicality(dto, stat);
+
+        Assert.NotNull(dto.FreeThrowRate);
+        Assert.True(dto.FreeThrowRate > 0.30m);
+        Assert.NotNull(dto.FoulsCommittedPer36);
+        Assert.Equal("Low Risk", dto.FibaFoulTroubleRisk);
+        Assert.Equal(100.0, Math.Round(dto.TwoPointScoringSharePct + dto.ThreePointScoringSharePct + dto.FreeThrowScoringSharePct, 0));
+    }
+
+    [Fact]
+    public void SmartScoutSearchEngine_MultiConstraintNlpParser_ShouldFilterByAgeHeightContractAndPercentage()
+    {
+        var analytics = new PlayerAnalyticsService();
+        var engine = new SmartScoutSearchEngine(analytics);
+
+        // Candidate 1: U24, 206cm Stretch Big, 2026 expiring contract, 40% 3PT, low turnovers
+        var pMatch = new Player(
+            externalApiId: 92001,
+            firstName: "Ercan",
+            lastName: "OsmaniClone",
+            position: "PF-C",
+            height: "6-9",
+            weightPounds: 235,
+            teamName: "Anadolu Efes",
+            league: "EuroLeague",
+            nationality: "TUR",
+            birthDate: new DateTime(2003, 8, 4, 0, 0, 0, DateTimeKind.Utc),
+            heightCm: 206,
+            weightKg: 107,
+            wingspanCm: 216);
+        pMatch.UpdateScoutingIntel(272, 2026, "Tier 2 • EuroLeague Starter", "IstBasket");
+
+        var sMatch = new PlayerSeasonStat(
+            pMatch.Id, 2026, 24, 22.0m, 12.5m, 2.4m, 6.5m, 1.1m, 0.9m, 0.51m, 0.40m, 0.82m, 1.0m,
+            league: "EuroLeague", teamName: "Anadolu Efes", fga: 8.5m, fg3a: 4.0m, pfCommitted: 2.0m);
+        typeof(PlayerSeasonStat).GetProperty("Player")!.SetValue(sMatch, pMatch);
+        StatCalculationService.EnrichAndCalculate(sMatch);
+
+        // Candidate 2: Older (31 yrs), 198cm guard -> should be filtered out by U24 and 205+ cm
+        var pOld = new Player(
+            externalApiId: 92002,
+            firstName: "Veteran",
+            lastName: "Shooter",
+            position: "SG",
+            height: "6-6",
+            weightPounds: 205,
+            teamName: "Fenerbahce",
+            league: "EuroLeague",
+            nationality: "TUR",
+            birthDate: new DateTime(1994, 2, 1, 0, 0, 0, DateTimeKind.Utc),
+            heightCm: 198,
+            weightKg: 93);
+        pOld.UpdateScoutingIntel(258, 2027, "Tier 1", "CAA");
+
+        var sOld = new PlayerSeasonStat(
+            pOld.Id, 2026, 25, 24.0m, 14.0m, 3.0m, 3.0m, 1.0m, 0.2m, 0.48m, 0.42m, 0.88m, 2.2m,
+            league: "EuroLeague", teamName: "Fenerbahce", fga: 10.0m, fg3a: 6.0m);
+        typeof(PlayerSeasonStat).GetProperty("Player")!.SetValue(sOld, pOld);
+        StatCalculationService.EnrichAndCalculate(sOld);
+
+        var results = engine.Search(
+            "U24 205+ cm yerli 2026 contract %38+ 3pt düşük top kaybı",
+            new[] { sMatch, sOld });
+
+        var matched = Assert.Single(results);
+        Assert.Equal(pMatch.Id, matched.PlayerId);
+        Assert.NotEmpty(matched.ParsedConstraints);
+        Assert.Contains(matched.ParsedConstraints, c => c.Contains("U24"));
+        Assert.Contains(matched.ParsedConstraints, c => c.Contains("205cm"));
+        Assert.Contains(matched.ParsedConstraints, c => c.Contains("2026"));
+    }
+
+    [Fact]
+    public void PlayerAnalyticsService_Compare_ShouldPopulateExtendedDifferentialsAndScoutingVerdict()
+    {
+        var analytics = new PlayerAnalyticsService();
+        var pA = new Player(93001, "Alpha", "Guard", "PG", "6-3", 195, "Real Madrid", "EuroLeague", birthDate: new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        var pB = new Player(93002, "Beta", "Guard", "PG", "6-4", 200, "Olympiacos", "EuroLeague", birthDate: new DateTime(2001, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+
+        var sA = new PlayerSeasonStat(pA.Id, 2026, 25, 25.0m, 16.0m, 6.0m, 3.0m, 1.5m, 0.2m, 0.49m, 0.39m, 0.86m, 1.8m, league: "EuroLeague");
+        var sB = new PlayerSeasonStat(pB.Id, 2026, 25, 24.0m, 12.0m, 4.5m, 4.2m, 1.1m, 0.4m, 0.45m, 0.35m, 0.80m, 1.9m, league: "EuroLeague");
+        typeof(PlayerSeasonStat).GetProperty("Player")!.SetValue(sA, pA);
+        typeof(PlayerSeasonStat).GetProperty("Player")!.SetValue(sB, pB);
+        StatCalculationService.EnrichAndCalculate(sA);
+        StatCalculationService.EnrichAndCalculate(sB);
+
+        var comp = analytics.Compare(sA, pA, sB, pB);
+
+        Assert.False(string.IsNullOrWhiteSpace(comp.ScoutingVerdict));
+        Assert.Contains("Alpha Guard", comp.ScoutingVerdict);
+        Assert.NotEmpty(comp.PlayerA.Percentiles);
+        Assert.NotEmpty(comp.PlayerB.Percentiles);
+        Assert.True(comp.Differentials.ContainsKey("PtsPer36"));
+        Assert.True(comp.Differentials.ContainsKey("StocksPer36"));
     }
 }

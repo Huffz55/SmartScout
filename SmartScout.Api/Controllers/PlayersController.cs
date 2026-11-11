@@ -1,9 +1,13 @@
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.EntityFrameworkCore;
 using SmartScout.Api.Attributes;
+using SmartScout.Application.Interfaces;
 using SmartScout.Application.UseCases.Players;
 using System;
+using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace SmartScout.Api.Controllers;
@@ -98,6 +102,8 @@ public class PlayersController : ControllerBase
         [FromQuery] string? category = null,
         [FromQuery] string? league = null,
         [FromQuery] int? season = null,
+        [FromQuery] int? maxAge = null,
+        [FromQuery] string? position = null,
         [FromQuery] int top = 25)
     {
         var query = new SmartScout.Application.UseCases.Analytics.GetSleeperPlayersQuery
@@ -105,6 +111,8 @@ public class PlayersController : ControllerBase
             Category = category,
             League = league,
             Season = season,
+            MaxAge = maxAge,
+            Position = position,
             Top = top
         };
         var result = await _mediator.Send(query);
@@ -132,15 +140,15 @@ public class PlayersController : ControllerBase
     [HttpGet("{id:guid}/similar")]
     public async Task<IActionResult> GetSimilarPlayers(
         Guid id,
-        [FromQuery] int season,
+        [FromQuery] int? season = null,
         [FromQuery] int top = 5,
-        [FromQuery] int minGamesPlayed = 20,
+        [FromQuery] int minGamesPlayed = 3,
         [FromQuery] bool excludeSamePlayer = true)
     {
         var query = new SmartScout.Application.UseCases.Analytics.GetSimilarPlayersQuery
         {
             PlayerId = id,
-            Season = season,
+            Season = season ?? 2026,
             Top = top,
             MinGamesPlayed = minGamesPlayed,
             ExcludeSamePlayer = excludeSamePlayer
@@ -201,5 +209,94 @@ public class PlayersController : ControllerBase
             return NotFound();
 
         return Ok(result);
+    }
+
+    [HttpPost("enrich-bios")]
+    [ApiKeyAuth]
+    public async Task<IActionResult> EnrichBios(
+        [FromServices] IPlayerBioEnrichmentService enrichmentService,
+        [FromQuery] string? league = null,
+        [FromQuery] int limit = 50,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await enrichmentService.EnrichPlayerBiosAsync(league, limit, cancellationToken);
+        return Ok(new
+        {
+            Message = $"Enrichment cycle completed: {result.TotalEnriched} of {result.TotalProcessed} players enriched with biographical and physical metrics.",
+            result.TotalProcessed,
+            result.TotalEnriched,
+            result.TotalFailed,
+            result.EnrichedPlayers
+        });
+    }
+
+    [HttpPost("{id:guid}/watchlist")]
+    public async Task<IActionResult> ToggleWatchlist(
+        Guid id, 
+        [FromServices] ISmartScoutDbContext dbContext, 
+        CancellationToken cancellationToken)
+    {
+        var player = await dbContext.Players.FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+        if (player == null) return NotFound();
+        player.ToggleWatchlist();
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Ok(new { isWatchlisted = player.IsWatchlisted });
+    }
+
+    public record ScoutNotesDto(string? Notes);
+
+    [HttpPost("{id:guid}/notes")]
+    public async Task<IActionResult> SaveNotes(
+        Guid id, 
+        [FromBody] ScoutNotesDto request, 
+        [FromServices] ISmartScoutDbContext dbContext, 
+        CancellationToken cancellationToken)
+    {
+        var player = await dbContext.Players.FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+        if (player == null) return NotFound();
+        player.SetScoutNotes(request?.Notes);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Ok(new { scoutNotes = player.ScoutNotes });
+    }
+
+    [HttpGet("watchlist")]
+    public async Task<IActionResult> GetWatchlist(
+        [FromServices] ISmartScoutDbContext dbContext, 
+        CancellationToken cancellationToken)
+    {
+        var watchlisted = await dbContext.Players
+            .Where(p => p.IsWatchlisted)
+            .OrderBy(p => p.FullName)
+            .Select(p => new
+            {
+                p.Id,
+                p.FullName,
+                p.PrimaryPosition,
+                p.Position,
+                p.HeightCm,
+                p.Height,
+                p.WeightKg,
+                p.League,
+                p.TeamName,
+                p.Nationality,
+                Age = p.CurrentAge,
+                p.ScoutNotes,
+                p.EstimatedMarketValueTier,
+                p.ContractExpirySeason,
+                LatestStat = p.SeasonStats.OrderByDescending(s => s.Season).Select(s => new
+                {
+                    s.Season,
+                    s.Points,
+                    s.Rebounds,
+                    s.Assists,
+                    s.Minutes,
+                    s.TrueShootingPct,
+                    s.EuroLeagueTransitionIndex,
+                    s.StocksPer36
+                }).FirstOrDefault()
+            })
+            .ToListAsync(cancellationToken);
+
+        return Ok(watchlisted);
     }
 }

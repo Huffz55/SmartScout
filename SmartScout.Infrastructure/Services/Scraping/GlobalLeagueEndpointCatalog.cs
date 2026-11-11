@@ -39,97 +39,97 @@ public static class GlobalLeagueEndpointCatalog
             LeagueName: "Turkish Airlines EuroLeague",
             PrimaryProvider: "BasketballReferenceInternational",
             PrimaryUrlTemplate: "https://www.basketball-reference.com/international/euroleague/{year}_per_game.html",
-            FallbackUrlTemplate: "https://basketball.realgm.com/international/league/1/Euroleague/stats/{year}/Averages/Qualified/All/Season/All/points/desc/1/Regular_Season"),
+            FallbackUrlTemplate: "https://basketball.realgm.com/international/league/1/Euroleague/stats/{year}/Averages/All/All/points/All/desc/1/Regular_Season"),
 
         new(
             LeagueCode: "ACB",
             LeagueName: "Liga ACB (Spain)",
             PrimaryProvider: "BasketballReferenceInternational",
             PrimaryUrlTemplate: "https://www.basketball-reference.com/international/spain-liga-acb/{year}_per_game.html",
-            FallbackUrlTemplate: "https://basketball.realgm.com/international/league/4/Spanish-ACB/stats/{year}/Averages/Qualified/All/Season/All/points/desc/1/Regular_Season"),
+            FallbackUrlTemplate: "https://basketball.realgm.com/international/league/4/Spanish-ACB/stats/{year}/Averages/All/All/points/All/desc/1/Regular_Season"),
 
         new(
             LeagueCode: "EuroCup",
             LeagueName: "BKT EuroCup",
             PrimaryProvider: "BasketballReferenceInternational",
             PrimaryUrlTemplate: "https://www.basketball-reference.com/international/eurocup/{year}_per_game.html",
-            FallbackUrlTemplate: "https://basketball.realgm.com/international/league/24/Eurocup/stats/{year}/Averages/Qualified/All/Season/All/points/desc/1/Regular_Season"),
+            FallbackUrlTemplate: "https://basketball.realgm.com/international/league/24/Eurocup/stats/{year}/Averages/All/All/points/All/desc/1/Regular_Season"),
 
         new(
             LeagueCode: "BSL",
             LeagueName: "Basketbol Süper Ligi (Turkey)",
             PrimaryProvider: "BasketballReferenceInternational",
             PrimaryUrlTemplate: "https://www.basketball-reference.com/international/turkey-super-league/{year}_per_game.html",
-            FallbackUrlTemplate: "https://basketball.realgm.com/international/league/7/Turkish-BSL/stats/{year}/Averages/Qualified/All/Season/All/points/desc/1/Regular_Season"),
+            FallbackUrlTemplate: "https://basketball.realgm.com/international/league/7/Turkish-BSL/stats/{year}/Averages/All/All/points/All/desc/1/Regular_Season"),
 
         new(
             LeagueCode: "BCL",
             LeagueName: "Basketball Champions League",
             PrimaryProvider: "RealGMInternational",
-            PrimaryUrlTemplate: "https://basketball.realgm.com/international/league/106/Basketball-Champions-League-Europe/stats/{year}/Averages/Qualified/All/Season/All/points/desc/1/Regular_Season",
-            FallbackUrlTemplate: "https://basketball.realgm.com/international/league/106/Basketball-Champions-League-Europe/stats/{year}/Averages/All/All/Season/All/points/desc/1/All"),
+            PrimaryUrlTemplate: "https://basketball.realgm.com/international/league/106/Basketball-Champions-League-Europe/stats/{year}/Averages/All/All/points/All/desc/1/Regular_Season",
+            FallbackUrlTemplate: "https://basketball.realgm.com/international/league/106/Basketball-Champions-League-Europe/stats/{year}/Averages/Qualified/All/points/All/desc/1/Regular_Season"),
 
         new(
             LeagueCode: "VTB",
             LeagueName: "VTB United League",
             PrimaryProvider: "BasketballReferenceInternational",
             PrimaryUrlTemplate: "https://www.basketball-reference.com/international/vtb-united/{year}_per_game.html",
-            FallbackUrlTemplate: "https://basketball.realgm.com/international/league/35/VTB-United-League/stats/{year}/Averages/Qualified/All/Season/All/points/desc/1/Regular_Season"),
+            FallbackUrlTemplate: "https://basketball.realgm.com/international/league/35/VTB-United-League/stats/{year}/Averages/All/All/points/All/desc/1/Regular_Season"),
 
         new(
             LeagueCode: "ABA",
             LeagueName: "ABA League First Division",
             PrimaryProvider: "BasketballReferenceInternational",
             PrimaryUrlTemplate: "https://www.basketball-reference.com/international/aba-adriatic/{year}_per_game.html",
-            FallbackUrlTemplate: "https://basketball.realgm.com/international/league/18/Adriatic-League-Liga-ABA/stats/{year}/Averages/Qualified/All/Season/All/points/desc/1/Regular_Season"),
+            FallbackUrlTemplate: "https://basketball.realgm.com/international/league/18/Adriatic-League-Liga-ABA/stats/{year}/Averages/All/All/points/All/desc/1/Regular_Season"),
 
         new(
             LeagueCode: "BBL",
             LeagueName: "Basketball Bundesliga (Germany)",
             PrimaryProvider: "RealGMInternational",
-            PrimaryUrlTemplate: "https://basketball.realgm.com/international/league/15/German-BBL/stats/{year}/Averages/Qualified/All/Season/All/points/desc/1/Regular_Season",
-            FallbackUrlTemplate: "https://basketball.realgm.com/international/league/15/German-BBL/stats/{year}/Averages/All/All/Season/All/points/desc/1/All"),
+            PrimaryUrlTemplate: "https://basketball.realgm.com/international/league/15/German-BBL/stats/{year}/Averages/All/All/points/All/desc/1/Regular_Season",
+            FallbackUrlTemplate: "https://basketball.realgm.com/international/league/15/German-BBL/stats/{year}/Averages/Qualified/All/points/All/desc/1/Regular_Season"),
 
         new(
             LeagueCode: "LNB",
             LeagueName: "LNB Pro A / Betclic Élite (France)",
             PrimaryProvider: "BasketballReferenceInternational",
             PrimaryUrlTemplate: "https://www.basketball-reference.com/international/france-lnb-pro-a/{year}_per_game.html",
-            FallbackUrlTemplate: "https://basketball.realgm.com/international/league/12/French-Jeep-Elite/stats/{year}/Averages/Qualified/All/Season/All/points/desc/1/Regular_Season"),
+            FallbackUrlTemplate: "https://basketball.realgm.com/international/league/12/French-Jeep-Elite/stats/{year}/Averages/All/All/points/All/desc/1/Regular_Season"),
 
         new(
             LeagueCode: "LegaA",
             LeagueName: "Lega Basket Serie A (Italy)",
             PrimaryProvider: "BasketballReferenceInternational",
             PrimaryUrlTemplate: "https://www.basketball-reference.com/international/italy-basket-serie-a/{year}_per_game.html",
-            FallbackUrlTemplate: "https://basketball.realgm.com/international/league/6/Italian-Lega-Basket-Serie-A/stats/{year}/Averages/Qualified/All/Season/All/points/desc/1/Regular_Season"),
+            FallbackUrlTemplate: "https://basketball.realgm.com/international/league/6/Italian-Lega-Basket-Serie-A/stats/{year}/Averages/All/All/points/All/desc/1/Regular_Season"),
 
         new(
             LeagueCode: "GBL",
             LeagueName: "Greek Basket League (HEBA A1)",
             PrimaryProvider: "BasketballReferenceInternational",
             PrimaryUrlTemplate: "https://www.basketball-reference.com/international/greek-basket-league/{year}_per_game.html",
-            FallbackUrlTemplate: "https://basketball.realgm.com/international/league/8/Greek-HEBA-A1/stats/{year}/Averages/Qualified/All/Season/All/points/desc/1/Regular_Season"),
+            FallbackUrlTemplate: "https://basketball.realgm.com/international/league/8/Greek-HEBA-A1/stats/{year}/Averages/All/All/points/All/desc/1/Regular_Season"),
 
         new(
             LeagueCode: "GLeague",
             LeagueName: "NBA G-League",
             PrimaryProvider: "BasketballReferenceGLeague",
             PrimaryUrlTemplate: "https://www.basketball-reference.com/gleague/years/gleague_{year}_per_game.html",
-            FallbackUrlTemplate: "https://basketball.realgm.com/dleague/stats/{year}/Averages/Qualified/All/Season/All/points/desc/1/Regular_Season"),
+            FallbackUrlTemplate: "https://basketball.realgm.com/gleague/stats/{year}/Averages/All/points/All/desc/1/1"),
 
         new(
             LeagueCode: "LKL",
             LeagueName: "Lietuvos Krepšinio Lyga (Lithuania)",
             PrimaryProvider: "RealGMInternational",
-            PrimaryUrlTemplate: "https://basketball.realgm.com/international/league/10/Lithuanian-LKL/stats/{year}/Averages/Qualified/All/Season/All/points/desc/1/Regular_Season",
-            FallbackUrlTemplate: "https://basketball.realgm.com/international/league/10/Lithuanian-LKL/stats/{year}/Averages/All/All/Season/All/points/desc/1/All"),
+            PrimaryUrlTemplate: "https://basketball.realgm.com/international/league/10/Lithuanian-LKL/stats/{year}/Averages/All/All/points/All/desc/1/Regular_Season",
+            FallbackUrlTemplate: "https://basketball.realgm.com/international/league/10/Lithuanian-LKL/stats/{year}/Averages/Qualified/All/points/All/desc/1/Regular_Season"),
 
         new(
             LeagueCode: "NCAAD1",
             LeagueName: "NCAA Division I",
             PrimaryProvider: "RealGMNcaa",
-            PrimaryUrlTemplate: "https://basketball.realgm.com/ncaa/stats/{year}/Averages/Qualified/All/Season/All/points/desc/1/Regular_Season",
+            PrimaryUrlTemplate: "https://basketball.realgm.com/ncaa/stats/{year}/Averages/Qualified/All/Season/All/points/desc/1/",
             FallbackUrlTemplate: "https://www.sports-reference.com/cbb/seasons/men/{year}-leaders.html")
     };
 

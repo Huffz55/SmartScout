@@ -9,5 +9,7 @@ public class GetSleeperPlayersQuery : IRequest<List<SleeperPlayerDto>>
     public string? Category { get; set; }
     public string? League { get; set; }
     public int? Season { get; set; }
+    public int? MaxAge { get; set; }
+    public string? Position { get; set; }
     public int Top { get; set; } = 25;
 }

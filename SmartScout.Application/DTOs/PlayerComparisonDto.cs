@@ -38,6 +38,23 @@ public class PlayerComparisonProfileDto
     public double? DefensivePressureIndex { get; set; }
     public double? BuyLowBounceBackIndex { get; set; }
 
+    // Physical, Contract & Per-36 Extensions
+    public int? Age { get; set; }
+    public int? HeightCm { get; set; }
+    public int? WeightKg { get; set; }
+    public int? WingspanCm { get; set; }
+    public int? StandingReachCm { get; set; }
+    public int? ContractExpirySeason { get; set; }
+    public string? EstimatedMarketValueTier { get; set; }
+    public decimal? PtsPer36 { get; set; }
+    public decimal? AstPer36 { get; set; }
+    public decimal? RebPer36 { get; set; }
+    public decimal? StocksPer36 { get; set; }
+    public decimal? ThreePointRate { get; set; }
+    public decimal? AssistToTurnoverRatio { get; set; }
+    public decimal? EuroLeagueTransitionIndex { get; set; }
+    public Dictionary<string, int> Percentiles { get; set; } = new();
+
     public RadarMetricsDto RadarMetrics { get; set; } = null!;
 }
 
@@ -53,4 +70,7 @@ public class PlayerComparisonDto
 
     // Statistical differentials (PlayerA - PlayerB)
     public Dictionary<string, decimal?> Differentials { get; set; } = new();
+
+    // Automated Executive Transfer Verdict
+    public string ScoutingVerdict { get; set; } = string.Empty;
 }

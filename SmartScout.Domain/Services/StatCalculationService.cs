@@ -35,7 +35,10 @@ public static class StatCalculationService
             stat.FreeThrowsAttempted,
             stat.FgPct,
             stat.Fg3Pct,
-            stat.FtPct);
+            stat.FtPct,
+            stat.FieldGoalsMade,
+            stat.ThreePointsMade,
+            stat.FreeThrowsMade);
 
         // 4. Effective Field Goal % (eFG%) = (FGM + 0.5 * 3PM) / FGA
         decimal? eFgPct = stat.EffectiveFgPct ?? CalculateEffectiveFgPct(
@@ -92,6 +95,22 @@ public static class StatCalculationService
             minutes,
             stat.FgPct);
 
+        // 9. Modern Defensive Stocks Per 36 (Steals + Blocks)
+        decimal? stocksPer36 = (stlPer36.HasValue || blkPer36.HasValue)
+            ? (stlPer36 ?? 0m) + (blkPer36 ?? 0m)
+            : null;
+
+        // 10. Modern 3-Point Rate (3PA / FGA Spacing Metric)
+        decimal? threePointRate = (stat.ThreePointsAttempted.HasValue && stat.FieldGoalsAttempted.HasValue && stat.FieldGoalsAttempted.Value > 0)
+            ? Math.Round(stat.ThreePointsAttempted.Value / stat.FieldGoalsAttempted.Value, 3)
+            : null;
+
+        // 11. EuroLeague Transition Index (0 - 100 Success Expectation)
+        decimal? transitionIndex = stat.EuroLeagueTransitionIndex ?? CalculateEuroLeagueTransitionIndex(
+            stat,
+            stat.Player?.CurrentAge,
+            stat.Player?.HeightCm);
+
         stat.SetCalculatedMetrics(
             leagueDifficultyCoefficient: coeff,
             ptsPer36: ptsPer36,
@@ -108,7 +127,10 @@ public static class StatCalculationService
             usgPct: usgPct,
             astTovRatio: astTov,
             gameScoreAvg: gameScore,
-            pirVal: pir);
+            pirVal: pir,
+            stocksPer36: stocksPer36,
+            threePointRate: threePointRate,
+            transitionIndex: transitionIndex);
     }
 
     public static decimal? CalculatePer36(decimal? statPerGame, decimal? minutesPerGame)
@@ -131,7 +153,10 @@ public static class StatCalculationService
         decimal? fta,
         decimal? fgPct = null,
         decimal? fg3Pct = null,
-        decimal? ftPct = null)
+        decimal? ftPct = null,
+        decimal? fgm = null,
+        decimal? fg3m = null,
+        decimal? ftm = null)
     {
         if (!points.HasValue || points.Value <= 0) return null;
 
@@ -140,7 +165,25 @@ public static class StatCalculationService
             decimal tsa = fga.Value + 0.44m * fta.Value;
             if (tsa > 0)
             {
-                return Math.Round(Math.Clamp(points.Value / (2m * tsa), 0m, 1.500m), 3);
+                decimal rawTs = points.Value / (2m * tsa);
+                bool hasShotMismatch = fgm.HasValue && fg3m.HasValue && ftm.HasValue
+                    && Math.Abs(points.Value - ((2m * fgm.Value) + fg3m.Value + ftm.Value)) > 0.8m
+                    && rawTs > 0.680m;
+
+                // Guard against upstream boxscore shot corruption (e.g., partial FGA making PTS/(2*TSA) > 0.90 or LNB missing 2PA/2PM)
+                if (!hasShotMismatch && rawTs <= 0.880m && points.Value <= (fga.Value * 3m + fta.Value + 0.15m))
+                {
+                    return Math.Round(rawTs, 3);
+                }
+
+                if (fgPct.HasValue && fgPct.Value > 0 && fgPct.Value <= 1.0m)
+                {
+                    decimal fallbackTs = fgPct.Value + ((fg3Pct ?? 0.33m) * 0.18m) + (((ftPct ?? 0.75m) - 0.70m) * 0.15m);
+                    decimal maxCap = hasShotMismatch ? 0.740m : 0.820m;
+                    return Math.Round(Math.Clamp(fallbackTs, 0.300m, maxCap), 3);
+                }
+
+                return Math.Round(Math.Clamp(rawTs, 0m, 0.850m), 3);
             }
         }
 
@@ -164,7 +207,19 @@ public static class StatCalculationService
         if (fgm.HasValue && fga.HasValue && fga.Value > 0)
         {
             decimal threeMade = fg3m ?? 0m;
-            return Math.Round(Math.Clamp((fgm.Value + 0.5m * threeMade) / fga.Value, 0m, 1.500m), 3);
+            decimal rawEfg = (fgm.Value + 0.5m * threeMade) / fga.Value;
+            if (rawEfg <= 1.000m && threeMade <= fgm.Value + 0.05m)
+            {
+                return Math.Round(rawEfg, 3);
+            }
+
+            if (fgPct.HasValue && fgPct.Value > 0 && fgPct.Value <= 1.0m)
+            {
+                decimal threeBonus = (fg3Pct ?? 0m) * 0.175m;
+                return Math.Round(Math.Clamp(fgPct.Value + threeBonus, 0m, 1.000m), 3);
+            }
+
+            return Math.Round(Math.Clamp(rawEfg, 0m, 1.000m), 3);
         }
 
         if (fgPct.HasValue && fgPct.Value > 0)
@@ -298,5 +353,75 @@ public static class StatCalculationService
 
         decimal usg = (playerPossessions / teamPossessionsOnFloor) * 100m;
         return Math.Round(Math.Clamp(usg, 5.0m, 48.0m), 1);
+    }
+
+    public static decimal? CalculateEuroLeagueTransitionIndex(
+        PlayerSeasonStat stat,
+        int? age = null,
+        int? heightCm = null)
+    {
+        if (string.Equals(stat.League, "EuroLeague", StringComparison.OrdinalIgnoreCase))
+            return 94.0m;
+        if (string.Equals(stat.League, "NBA", StringComparison.OrdinalIgnoreCase))
+            return 98.0m;
+
+        if (!stat.Minutes.HasValue || stat.Minutes.Value < 7.0m || stat.GamesPlayed < 3)
+            return null;
+
+        decimal score = 52.0m; // Base for pro tier-2 player
+
+        // 1. True Shooting efficiency impact (+/- 18 pts)
+        decimal ts = stat.TrueShootingPct ?? 0.53m;
+        score += Math.Clamp((ts - 0.54m) * 65m, -18m, 18m);
+
+        // 2. Volume Scoring per 36 min (+/- 15 pts)
+        decimal pts36 = stat.PtsPer36 ?? (stat.Points.HasValue && stat.Minutes > 0 ? (stat.Points.Value / stat.Minutes.Value) * 36m : 10m);
+        if (pts36 >= 20m) score += 14m;
+        else if (pts36 >= 16m) score += 9m;
+        else if (pts36 >= 12m) score += 4m;
+        else if (pts36 < 8m) score -= 8m;
+
+        // 3. Playmaking & Decision Making (AST/TOV)
+        if (stat.AssistToTurnoverRatio.HasValue)
+        {
+            if (stat.AssistToTurnoverRatio.Value >= 2.2m) score += 9m;
+            else if (stat.AssistToTurnoverRatio.Value >= 1.6m) score += 5m;
+            else if (stat.AssistToTurnoverRatio.Value < 0.9m) score -= 6m;
+        }
+
+        // 4. Defensive Stocks Activity (Steals + Blocks / 36)
+        decimal stocks = (stat.StlPer36 ?? 0m) + (stat.BlkPer36 ?? 0m);
+        if (stocks >= 2.4m) score += 8m;
+        else if (stocks >= 1.7m) score += 4m;
+
+        // 5. Modern 3-Point Gravity & Spacing
+        if (stat.Fg3Pct.HasValue && stat.ThreePointsMade.HasValue)
+        {
+            if (stat.Fg3Pct.Value >= 0.38m && stat.ThreePointsMade.Value >= 1.5m) score += 7m;
+            else if (stat.Fg3Pct.Value >= 0.35m && stat.ThreePointsMade.Value >= 1.0m) score += 4m;
+        }
+
+        // 6. Age Upside & Development Trajectory
+        if (age.HasValue)
+        {
+            if (age.Value <= 22) score += 10m;
+            else if (age.Value <= 25) score += 6m;
+            else if (age.Value <= 28) score += 2m;
+            else if (age.Value >= 33) score -= 8m;
+        }
+
+        // 7. Free Throw Generation Pressure (Fouls Drawn / FGA)
+        if (stat.FoulsDrawn.HasValue && stat.FieldGoalsAttempted.HasValue && stat.FieldGoalsAttempted.Value > 0)
+        {
+            decimal ftr = stat.FoulsDrawn.Value / stat.FieldGoalsAttempted.Value;
+            if (ftr >= 0.38m) score += 6m;
+            else if (ftr >= 0.25m) score += 3m;
+        }
+
+        // 8. League Difficulty Weight
+        decimal diff = BasketballLeague.GetDifficultyCoefficient(stat.League);
+        score *= (0.80m + (diff * 0.20m));
+
+        return Math.Clamp(Math.Round(score, 1), 15.0m, 96.0m);
     }
 }

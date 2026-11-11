@@ -68,7 +68,7 @@ public class BasketballSeason
         var list = new List<BasketballSeason>();
         for (int endYear = 2019; endYear <= 2027; endYear++)
         {
-            list.Add(new BasketballSeason(endYear - 1, endYear, isCurrent: endYear == 2026 || endYear == 2027));
+            list.Add(new BasketballSeason(endYear - 1, endYear, isCurrent: endYear == 2027));
         }
         return list;
     }

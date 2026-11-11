@@ -13,6 +13,8 @@ public class SleeperPlayerDto
     public int Season { get; set; }
     public string League { get; set; } = string.Empty;
     public string TeamName { get; set; } = string.Empty;
+    public string? ParentTeam { get; set; }
+    public bool IsTwoWayPlayer { get; set; }
     public decimal LeagueDifficultyCoefficient { get; set; }
 
     // Sleeper Classification: "ForgottenPeak", "LowMinuteMonster", "StepUpCandidate"
@@ -39,10 +41,17 @@ public class SleeperPlayerDto
     public decimal? EffectiveFgPct { get; set; }
     public decimal? Fg3Pct { get; set; }
     public decimal? ThreePointsAttempted { get; set; }
+    public decimal? ThreePointsMade { get; set; }
     public decimal? UsagePct { get; set; }
     public decimal? AssistToTurnoverRatio { get; set; }
     public decimal? GameScoreAverage { get; set; }
     public decimal? Pir { get; set; }
+    public decimal? StocksPer36 { get; set; }
+    public decimal? ThreePointRate { get; set; }
+    public decimal? EuroLeagueTransitionIndex { get; set; }
+    public string? EstimatedMarketValueTier { get; set; }
+    public int? ContractExpirySeason { get; set; }
+    public bool IsWatchlisted { get; set; }
 
     // Context & Scouting Insights
     public string? PeakSeasonContext { get; set; }

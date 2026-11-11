@@ -118,6 +118,22 @@ public class SmartScoutDbContext : DbContext, ISmartScoutDbContext
             entity.Property(e => e.Nationality)
                 .HasMaxLength(50);
 
+            entity.Property(e => e.EstimatedMarketValueTier)
+                .HasMaxLength(60);
+
+            entity.Property(e => e.AgencyName)
+                .HasMaxLength(120);
+
+            entity.Property(e => e.DominantHand)
+                .HasMaxLength(10)
+                .HasDefaultValue("Right");
+
+            entity.Property(e => e.ScoutNotes)
+                .HasColumnType("text");
+
+            entity.Property(e => e.IsWatchlisted)
+                .HasDefaultValue(false);
+
             entity.Property(e => e.ExternalIdsJson)
                 .HasColumnType("jsonb");
                 
@@ -207,6 +223,15 @@ public class SmartScoutDbContext : DbContext, ISmartScoutDbContext
 
             entity.Property(e => e.GameScoreAverage)
                 .HasPrecision(5, 1);
+
+            entity.Property(e => e.StocksPer36)
+                .HasPrecision(4, 1);
+
+            entity.Property(e => e.ThreePointRate)
+                .HasPrecision(4, 3);
+
+            entity.Property(e => e.EuroLeagueTransitionIndex)
+                .HasPrecision(5, 2);
 
             entity.Property(e => e.RawScrapedPayload)
                 .HasColumnType("jsonb");

@@ -20,6 +20,17 @@ public class SmartScoutSearchResultDto
     // Human-readable tactical explanations of why this player matched
     public List<string> MatchReasons { get; set; } = new();
 
+    // Active NLP constraints extracted from the query
+    public List<string> ParsedConstraints { get; set; } = new();
+
+    // Bio & Market Context
+    public int? Age { get; set; }
+    public int? HeightCm { get; set; }
+    public int? ContractExpirySeason { get; set; }
+    public string? EstimatedMarketValueTier { get; set; }
+    public decimal? EuroLeagueTransitionIndex { get; set; }
+    public decimal? StocksPer36 { get; set; }
+
     // Key Stats
     public decimal? Points { get; set; }
     public decimal? Rebounds { get; set; }

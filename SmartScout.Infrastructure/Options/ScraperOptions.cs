@@ -13,8 +13,8 @@ public class ScraperOptions
     public bool EnableBackgroundSync { get; set; } = false;
     public bool EnableDomesticLeagueFullSweep { get; set; } = false;
 
-    // Multi-season European basketball ingestion from 2018-19 (2019) to 2025-26 (2026) in chronological order
-    public int[] EuroSeasons { get; set; } = new[] { 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026 };
+    // Multi-season European and international basketball ingestion from 2018-19 (2019) to 2026-27 (2027)
+    public int[] EuroSeasons { get; set; } = new[] { 2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026, 2027 };
     public int EuroMaxConcurrentRequests { get; set; } = 2;
     public int EuroDelayBetweenWavesMs { get; set; } = 1200;
     public bool EnableEuroLiveApiBoxscores { get; set; } = false;

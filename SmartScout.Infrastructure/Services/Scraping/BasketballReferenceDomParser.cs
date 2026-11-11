@@ -212,8 +212,15 @@ public class BasketballReferenceDomParser
             }
         }
 
-        // 2. Check RealGM tables (table-striped, table-bordered, tablesaw, or table with Player/Team/GP/MPG/PPG headers)
-        var realGmTable = doc.DocumentNode.SelectSingleNode("//table[contains(@class, 'table-striped') or contains(@class, 'table-bordered') or contains(@class, 'tablesaw') or .//th[contains(., 'MPG') or contains(., 'PPG')]]");
+        // 2. Check RealGM tables, preferring the populated data table over empty sticky fixed-table-header clones
+        var realGmTables = doc.DocumentNode.SelectNodes("//table[contains(@class, 'table-striped') or contains(@class, 'table-bordered') or contains(@class, 'tablesaw') or .//th[contains(., 'MPG') or contains(., 'PPG')]]");
+        var realGmTable = realGmTables?
+            .Select(t => (Table: t, Rows: t.SelectNodes(".//tbody/tr") ?? t.SelectNodes(".//tr[td]")))
+            .Where(x => x.Rows != null && x.Rows.Count > 0)
+            .OrderByDescending(x => x.Rows!.Count)
+            .Select(x => x.Table)
+            .FirstOrDefault();
+
         if (realGmTable != null)
         {
             var headerNodes = realGmTable.SelectNodes(".//thead/tr/th") ?? realGmTable.SelectNodes(".//tr/th");

@@ -10,6 +10,6 @@ public class GetSimilarPlayersQuery : IRequest<List<SimilarPlayerDto>>
     public Guid PlayerId { get; set; }
     public int Season { get; set; }
     public int Top { get; set; } = 5;
-    public int MinGamesPlayed { get; set; } = 20;
+    public int MinGamesPlayed { get; set; } = 5;
     public bool ExcludeSamePlayer { get; set; } = true;
 }

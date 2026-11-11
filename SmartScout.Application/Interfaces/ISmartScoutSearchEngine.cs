@@ -9,5 +9,6 @@ public interface ISmartScoutSearchEngine
     List<SmartScoutSearchResultDto> Search(
         string prompt, 
         IEnumerable<PlayerSeasonStat> candidateStats, 
-        int top = 20);
+        int top = 20,
+        int? targetSeason = null);
 }

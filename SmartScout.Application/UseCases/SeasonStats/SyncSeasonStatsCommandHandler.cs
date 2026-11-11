@@ -109,16 +109,17 @@ public class SyncSeasonStatsCommandHandler : IRequestHandler<SyncSeasonStatsComm
                                 ? discPlayer.TeamName
                                 : existingDbPlayer.TeamName;
 
-                            string? posToSet = !string.IsNullOrWhiteSpace(discPlayer.Position)
-                                ? discPlayer.Position
-                                : existingDbPlayer.Position;
+                            string? posToSet = PlayerMergeHelper.ResolvePosition(existingDbPlayer.Position, discPlayer.Position);
 
-                            string? natToSet = !string.IsNullOrWhiteSpace(discPlayer.Nationality)
-                                ? discPlayer.Nationality
-                                : existingDbPlayer.Nationality;
+                            string natToSet = PlayerMergeHelper.ResolveNationality(
+                                existingDbPlayer.Nationality,
+                                discPlayer.Nationality,
+                                !string.IsNullOrWhiteSpace(discPlayer.FirstName) ? discPlayer.FirstName : existingDbPlayer.FirstName,
+                                !string.IsNullOrWhiteSpace(discPlayer.LastName) ? discPlayer.LastName : existingDbPlayer.LastName,
+                                teamToSet);
 
                             // Preserve existing real birth date if already known
-                            DateTime? birthToSet = existingDbPlayer.BirthDate ?? discPlayer.BirthDate;
+                            DateTime? birthToSet = PlayerMergeHelper.ResolveBirthDate(existingDbPlayer.BirthDate, discPlayer.BirthDate);
 
                             existingDbPlayer.UpdateDetails(
                                 firstName: !string.IsNullOrWhiteSpace(discPlayer.FirstName) ? discPlayer.FirstName : existingDbPlayer.FirstName,

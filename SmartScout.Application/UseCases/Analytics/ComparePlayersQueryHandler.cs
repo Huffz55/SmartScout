@@ -5,6 +5,7 @@ using SmartScout.Application.DTOs;
 using SmartScout.Application.Interfaces;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -36,7 +37,11 @@ public class ComparePlayersQueryHandler : IRequestHandler<ComparePlayersQuery, P
 
         var statA = await _dbContext.SeasonStats
             .Include(s => s.Player)
-            .FirstOrDefaultAsync(s => s.PlayerId == request.PlayerAId && s.Season == request.SeasonA, cancellationToken);
+            .FirstOrDefaultAsync(s => s.PlayerId == request.PlayerAId && s.Season == request.SeasonA, cancellationToken)
+            ?? await _dbContext.SeasonStats
+                .Include(s => s.Player)
+                .OrderByDescending(s => s.Season)
+                .FirstOrDefaultAsync(s => s.PlayerId == request.PlayerAId, cancellationToken);
 
         if (statA == null || statA.Player == null)
         {
@@ -45,7 +50,11 @@ public class ComparePlayersQueryHandler : IRequestHandler<ComparePlayersQuery, P
 
         var statB = await _dbContext.SeasonStats
             .Include(s => s.Player)
-            .FirstOrDefaultAsync(s => s.PlayerId == request.PlayerBId && s.Season == request.SeasonB, cancellationToken);
+            .FirstOrDefaultAsync(s => s.PlayerId == request.PlayerBId && s.Season == request.SeasonB, cancellationToken)
+            ?? await _dbContext.SeasonStats
+                .Include(s => s.Player)
+                .OrderByDescending(s => s.Season)
+                .FirstOrDefaultAsync(s => s.PlayerId == request.PlayerBId, cancellationToken);
 
         if (statB == null || statB.Player == null)
         {

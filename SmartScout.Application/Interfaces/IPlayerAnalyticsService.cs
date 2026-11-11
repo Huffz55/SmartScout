@@ -14,4 +14,6 @@ public interface IPlayerAnalyticsService
     double CalculateEuropeanCompatibilityIndex(PlayerSeasonStat stat);
     double CalculateDefensivePressureIndex(PlayerSeasonStat stat);
     double CalculateBuyLowBounceBackIndex(PlayerSeasonStat currentStat, IEnumerable<PlayerSeasonStat>? careerHistory = null);
+    Dictionary<string, int> CalculatePositionalPercentiles(PlayerSeasonStat stat, string? position = null);
+    void PopulateShotDietAndPhysicality(PlayerScoutingReportDto dto, PlayerSeasonStat stat);
 }

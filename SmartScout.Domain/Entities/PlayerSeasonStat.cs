@@ -70,6 +70,9 @@ public class PlayerSeasonStat
     public decimal? AssistPct { get; private set; }
     public decimal? WinShares { get; private set; }
     public decimal? BoxPlusMinus { get; private set; }
+    public decimal? StocksPer36 { get; private set; }
+    public decimal? ThreePointRate { get; private set; }
+    public decimal? EuroLeagueTransitionIndex { get; private set; }
 
     // 5. Future-Proof Raw JSONB Backup
     public string? RawScrapedPayload { get; private set; }
@@ -310,7 +313,10 @@ public class PlayerSeasonStat
         decimal? usgPct,
         decimal? astTovRatio,
         decimal? gameScoreAvg,
-        decimal? pirVal)
+        decimal? pirVal,
+        decimal? stocksPer36 = null,
+        decimal? threePointRate = null,
+        decimal? transitionIndex = null)
     {
         LeagueDifficultyCoefficient = leagueDifficultyCoefficient;
         PtsPer36 = ptsPer36;
@@ -328,5 +334,13 @@ public class PlayerSeasonStat
         AssistToTurnoverRatio = astTovRatio;
         GameScoreAverage = gameScoreAvg;
         Pir = pirVal;
+        StocksPer36 = stocksPer36 ?? ((stlPer36.HasValue || blkPer36.HasValue) ? (stlPer36 ?? 0m) + (blkPer36 ?? 0m) : null);
+        ThreePointRate = threePointRate;
+        EuroLeagueTransitionIndex = transitionIndex ?? EuroLeagueTransitionIndex;
+    }
+
+    public void SetTransitionIndex(decimal? transitionIndex)
+    {
+        EuroLeagueTransitionIndex = transitionIndex;
     }
 }

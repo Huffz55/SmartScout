@@ -60,19 +60,55 @@ public class GetPlayerProfileQueryHandler : IRequestHandler<GetPlayerProfileQuer
         double dpi = _analyticsService.CalculateDefensivePressureIndex(stat);
         double buyLow = _analyticsService.CalculateBuyLowBounceBackIndex(stat, player.SeasonStats);
 
-        return new PlayerScoutingReportDto
+        var dto = new PlayerScoutingReportDto
         {
             PlayerId = player.Id,
             FirstName = player.FirstName,
             LastName = player.LastName,
             Position = player.Position,
             Height = player.Height,
+            HeightCm = player.HeightCm,
             WeightPounds = player.WeightPounds,
+            WeightKg = player.WeightKg,
+            WingspanCm = player.WingspanCm,
+            StandingReachCm = player.StandingReachCm,
+            Age = player.CurrentAge,
+            BirthDate = player.BirthDate,
+            ContractExpirySeason = player.ContractExpirySeason,
+            EstimatedMarketValueTier = player.EstimatedMarketValueTier,
+            AgencyName = player.AgencyName,
+            ScoutNotes = player.ScoutNotes,
+            IsWatchlisted = player.IsWatchlisted,
             TeamName = !string.IsNullOrWhiteSpace(stat.TeamName) ? stat.TeamName : player.TeamName,
             League = !string.IsNullOrWhiteSpace(stat.League) ? stat.League : player.League,
             Season = stat.Season,
             Archetype = archetype.ToString(),
             RadarMetrics = radar,
+            EuroLeagueTransitionIndex = stat.EuroLeagueTransitionIndex,
+            StocksPer36 = stat.StocksPer36 ?? ((stat.StlPer36 ?? 0) + (stat.BlkPer36 ?? 0)),
+            ThreePointRate = stat.ThreePointRate,
+            Percentiles = _analyticsService.CalculatePositionalPercentiles(stat, player.Position),
+            CareerHistory = player.SeasonStats
+                .OrderBy(s => s.Season)
+                .Select(s => new CareerSeasonStintDto
+                {
+                    Season = s.Season,
+                    League = !string.IsNullOrWhiteSpace(s.League) ? s.League : player.League,
+                    TeamName = !string.IsNullOrWhiteSpace(s.TeamName) ? s.TeamName : player.TeamName,
+                    GamesPlayed = s.GamesPlayed,
+                    Minutes = s.Minutes,
+                    Points = s.Points,
+                    Rebounds = s.Rebounds,
+                    Assists = s.Assists,
+                    Fg3Pct = s.Fg3Pct,
+                    TrueShootingPct = s.TrueShootingPct,
+                    PtsPer36 = s.PtsPer36 ?? (s.Minutes > 0 && s.Points.HasValue ? Math.Round((s.Points.Value / s.Minutes.Value) * 36m, 1) : null),
+                    StocksPer36 = s.StocksPer36 ?? ((s.StlPer36 ?? 0) + (s.BlkPer36 ?? 0)),
+                    Pir = s.Pir,
+                    EuroLeagueTransitionIndex = s.EuroLeagueTransitionIndex,
+                    LeagueDifficultyCoefficient = s.LeagueDifficultyCoefficient
+                })
+                .ToList(),
             GamesPlayed = stat.GamesPlayed,
             Minutes = stat.Minutes,
             Points = stat.Points,
@@ -103,5 +139,8 @@ public class GetPlayerProfileQueryHandler : IRequestHandler<GetPlayerProfileQuer
             DefensivePressureIndex = dpi,
             BuyLowBounceBackIndex = buyLow
         };
+
+        _analyticsService.PopulateShotDietAndPhysicality(dto, stat);
+        return dto;
     }
 }

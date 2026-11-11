@@ -138,4 +138,38 @@ public class BasketballReferenceDomParserTests
         Assert.Equal(12.0m, adv.WinShares);
         Assert.Equal(9.9m, adv.BoxPlusMinus);
     }
+
+    [Fact]
+    public void ParseLeagueSeasonTable_ShouldSkipEmptyStickyFixedHeaderTable_AndParseDataTable()
+    {
+        var html = @"
+        <html>
+        <body>
+            <div class='fixed-table-header'>
+                <table class='table table-bordered table-hover'>
+                    <thead><tr><th>#</th><th>Player</th><th>Team</th><th>GP</th><th>MPG</th><th>PPG</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <table class='table table-striped table-bordered'>
+                <thead><tr><th>#</th><th>Player</th><th>Team</th><th>GP</th><th>MPG</th><th>PPG</th></tr></thead>
+                <tbody>
+                    <tr><td>101.</td><td><a href='/player/Isiaha-Mike/Summary/107301'>Isiaha Mike</a></td><td>BAY</td><td>41</td><td>21.2</td><td>9.0</td></tr>
+                </tbody>
+            </table>
+        </body>
+        </html>";
+
+        var doc = new HtmlDocument();
+        doc.LoadHtml(html);
+
+        var rows = _parser.ParseLeagueSeasonTable(doc, "BBL");
+
+        Assert.Single(rows);
+        Assert.Equal("Isiaha", rows[0].FirstName);
+        Assert.Equal("Mike", rows[0].LastName);
+        Assert.Equal("BAY", rows[0].TeamName);
+        Assert.Equal(41, rows[0].Metrics.GamesPlayed);
+        Assert.Equal(9.0m, rows[0].Metrics.Points);
+    }
 }

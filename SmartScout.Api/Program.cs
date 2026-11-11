@@ -96,4 +96,14 @@ app.UseAuthorization();
 app.MapControllers();
 app.MapHealthChecks("/health");
 
+// CLI Mode: Automated Terminal Batch Enrichment for all database players
+if (args.Contains("--enrich-all") || args.Contains("--fill-db"))
+{
+    using var scope = app.Services.CreateScope();
+    var enrichmentService = scope.ServiceProvider.GetRequiredService<SmartScout.Application.Interfaces.IPlayerBioEnrichmentService>();
+    var summary = await enrichmentService.EnrichAllDatabasePlayersAsync(concurrency: 6);
+    Console.WriteLine($"[SmartScout CLI] Processed {summary.TotalProcessed:N0} players. Enriched {summary.TotalEnriched:N0} records.");
+    return;
+}
+
 app.Run();

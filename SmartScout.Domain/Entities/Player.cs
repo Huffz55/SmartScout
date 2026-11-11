@@ -21,12 +21,50 @@ public class Player
     public int? WeightPounds { get; private set; }
     public int? WeightKg { get; private set; }
     public int? WingspanCm { get; private set; }
+    public int? StandingReachCm { get; private set; }
     public int? DraftYear { get; private set; }
     public int? DraftPick { get; private set; }
     public string? TeamName { get; private set; }
     public string League { get; private set; } = string.Empty;
     public string? Nationality { get; private set; }
     public DateTime? BirthDate { get; private set; }
+    public int? ContractExpirySeason { get; private set; }
+    public string? EstimatedMarketValueTier { get; private set; }
+    public string? AgencyName { get; private set; }
+    public string DominantHand { get; private set; } = "Right";
+    public string? ScoutNotes { get; private set; }
+    public bool IsWatchlisted { get; private set; }
+
+    /// <summary>
+    /// Dynamically computed age based on BirthDate and the current UTC date.
+    /// Never stored statically in DB; always derived on-the-fly.
+    /// </summary>
+    public int? CurrentAge
+    {
+        get
+        {
+            if (!BirthDate.HasValue) return null;
+            var today = DateTime.UtcNow.Date;
+            var dob = BirthDate.Value.Date;
+            int age = today.Year - dob.Year;
+            if (dob > today.AddYears(-age)) age--;
+            return (age >= 14 && age <= 55) ? age : null;
+        }
+    }
+
+    /// <summary>
+    /// Computes age relative to a specific reference date (e.g. season end).
+    /// </summary>
+    public int? CalculateAgeAt(DateTime referenceDate)
+    {
+        if (!BirthDate.HasValue) return null;
+        var refDate = referenceDate.Date;
+        var dob = BirthDate.Value.Date;
+        int age = refDate.Year - dob.Year;
+        if (dob > refDate.AddYears(-age)) age--;
+        return (age >= 14 && age <= 55) ? age : null;
+    }
+
     public string? ExternalIdsJson { get; private set; } // JSONB mapping across providers (Balldontlie, BRef, EuroLeague, RealGM)
 
     private readonly List<PlayerSeasonStat> _seasonStats = new();
@@ -127,6 +165,35 @@ public class Player
         _seasonStats.Add(stat);
     }
 
+    public void SetScoutNotes(string? notes)
+    {
+        ScoutNotes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();
+    }
+
+    public void ToggleWatchlist(bool? state = null)
+    {
+        IsWatchlisted = state ?? !IsWatchlisted;
+    }
+
+    public void UpdateScoutingIntel(
+        int? standingReachCm = null,
+        int? contractExpirySeason = null,
+        string? estimatedMarketValueTier = null,
+        string? agencyName = null,
+        string? dominantHand = null)
+    {
+        if (standingReachCm.HasValue && standingReachCm.Value > 170 && standingReachCm.Value < 320)
+            StandingReachCm = standingReachCm.Value;
+        if (contractExpirySeason.HasValue)
+            ContractExpirySeason = contractExpirySeason.Value;
+        if (!string.IsNullOrWhiteSpace(estimatedMarketValueTier))
+            EstimatedMarketValueTier = estimatedMarketValueTier.Trim();
+        if (!string.IsNullOrWhiteSpace(agencyName))
+            AgencyName = agencyName.Trim();
+        if (!string.IsNullOrWhiteSpace(dominantHand))
+            DominantHand = dominantHand.Trim();
+    }
+
     public static string NormalizeName(string? firstName, string? lastName)
     {
         string raw = $"{firstName} {lastName}".Trim().ToLowerInvariant();
@@ -165,9 +232,11 @@ public class Player
         var parts = height.Split('-', StringSplitOptions.TrimEntries);
         if (parts.Length == 2 && int.TryParse(parts[0], out int feet) && int.TryParse(parts[1], out int inches))
         {
-            return (int)Math.Round((feet * 12 + inches) * 2.54);
+            int cmVal = (int)Math.Round((feet * 12 + inches) * 2.54);
+            if (cmVal >= 160 && cmVal <= 240) return cmVal;
+            return null;
         }
-        if (int.TryParse(height.Replace("cm", "", StringComparison.OrdinalIgnoreCase).Trim(), out int cm) && cm > 140 && cm < 250)
+        if (int.TryParse(height.Replace("cm", "", StringComparison.OrdinalIgnoreCase).Trim(), out int cm) && cm >= 160 && cm <= 240)
         {
             return cm;
         }
@@ -187,8 +256,60 @@ public class Player
         "Onuralp Bitim", "Sehmus Hazer", "Ercan Osmani", "Bugrahan Tuncer",
         "Dogus Ozdemiroglu", "Erkan Yilmaz", "Kenan Sipahi", "Sadik Emir Kabaca",
         "Tarik Biberovic", "Samet Yigitoglu", "Omer Faruk Yurtseven", "Alperen Sengun",
-        "Adem Bona", "Metecan Birsen", "Mert Emre Eksioglu", "Can Mutaf"
+        "Adem Bona", "Metecan Birsen", "Mert Emre Eksioglu", "Can Mutaf",
+        "Scottie Wilbekin", "Shane Larkin", "Muhsin Yasar", "Egehan Arna", "Yigitcan Saybir"
     };
+
+    private static readonly HashSet<string> KnownTurkishFirstNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Ahmet", "Mehmet", "Ali", "Mustafa", "Emre", "Can", "Kerem", "Berk", "Ege", "Egehan",
+        "Arda", "Batuhan", "Yigit", "Yiğit", "Yagiz", "Yağız", "Furkan", "Sertac", "Sertaç",
+        "Melih", "Onuralp", "Sehmus", "Şehmuz", "Ercan", "Bugrahan", "Buğrahan", "Dogus", "Doğuş",
+        "Erkan", "Kenan", "Sadik", "Sadık", "Tarik", "Tarık", "Samet", "Omer", "Ömer", "Alperen",
+        "Adem", "Metecan", "Mert", "Muhsin", "Tolga", "Berke", "Okben", "Burak", "Eren", "Hakan",
+        "Gokhan", "Gökhan", "Serhat", "Oguz", "Oğuz", "Sinan", "Baris", "Barış", "Cem", "Doruk",
+        "Kaan", "Emir", "Berkcan", "Berkan", "Enes", "Semih", "Ibrahim", "İbrahim", "Dogukan", "Doğukan",
+        "Ata", "Bilal", "Tuncay", "Abdullah", "Mete", "Faruk", "Berkay", "Cagdas", "Çağdaş", "Deniz",
+        "Ilkan", "İlkan", "Ilker", "İlker", "Ismail", "İsmail", "Kutay", "Mahir", "Murat", "Ogulcan",
+        "Oğulcan", "Onur", "Ozgur", "Özgür", "Ridvan", "Rıdvan", "Sabri", "Sarp", "Sefa", "Serkan",
+        "Taner", "Tugberk", "Tuğberk", "Ufuk", "Ugur", "Uğur", "Umut", "Volkan", "Yalcin", "Yalçın",
+        "Yasin", "Zafer", "Ziya", "Alp", "Anil", "Anıl", "Arif", "Ateberk", "Batu", "Bekir",
+        "Bertan", "Bilgehan", "Bora", "Bugra", "Buğra", "Cengiz", "Cengizhan", "Emin", "Engin",
+        "Eray", "Erbey", "Erkin", "Eyup", "Eyüp", "Fatih", "Firat", "Fırat", "Goksenin", "Göksenin",
+        "Goktug", "Göktuğ", "Halil", "Hamdi", "Hasan", "Kivanc", "Kıvanç", "Mertcan", "Omercan",
+        "Ömercan", "Orhan", "Polat", "Recai", "Tevfik", "Tibet", "Toprak", "Tuna", "Yunus"
+    };
+
+    private static bool IsTurkishClub(string? teamName)
+    {
+        if (string.IsNullOrWhiteSpace(teamName)) return false;
+        string normalized = NormalizeName(teamName, "");
+        return normalized.Contains("besiktas") ||
+               normalized.Contains("fenerbahce") ||
+               normalized.Contains("efes") ||
+               normalized.Contains("bahcesehir") ||
+               normalized.Contains("telekom") ||
+               normalized.Contains("karsiyaka") ||
+               normalized.Contains("bursa") ||
+               normalized.Contains("tofas") ||
+               normalized.Contains("darussafaka") ||
+               normalized.Contains("galatasaray") ||
+               normalized.Contains("manisa") ||
+               normalized.Contains("petkim") ||
+               normalized.Contains("buyukcekmece") ||
+               normalized.Contains("merkezefendi") ||
+               normalized.Contains("yalova") ||
+               normalized.Contains("samsun") ||
+               normalized.Contains("trabzon") ||
+               normalized.Contains("mersin") ||
+               normalized.Contains("konya") ||
+               normalized.Contains("bodrum") ||
+               normalized.Contains("ormanspor") ||
+               normalized.Contains("afyon") ||
+               normalized.Contains("fethiye") ||
+               normalized.Contains("ted ankara") ||
+               normalized.Contains("gaziantep");
+    }
 
     public static string? DetectNationality(string firstName, string lastName, string? teamName = null)
     {
@@ -198,21 +319,24 @@ public class Player
             return "TUR";
         }
 
-        if (!string.IsNullOrEmpty(teamName) && 
-            (teamName.Contains("BESIKTAS", StringComparison.OrdinalIgnoreCase) ||
-             teamName.Contains("FENERBAHCE", StringComparison.OrdinalIgnoreCase) ||
-             teamName.Contains("EFES", StringComparison.OrdinalIgnoreCase) ||
-             teamName.Contains("BAHCESEHIR", StringComparison.OrdinalIgnoreCase) ||
-             teamName.Contains("TELEKOM", StringComparison.OrdinalIgnoreCase) ||
-             teamName.Contains("KARS", StringComparison.OrdinalIgnoreCase) ||
-             teamName.Contains("BURSA", StringComparison.OrdinalIgnoreCase) ||
-             teamName.Contains("TOFAS", StringComparison.OrdinalIgnoreCase)))
+        if (IsTurkishClub(teamName))
         {
-            if (lastName.EndsWith("oglu", StringComparison.OrdinalIgnoreCase) ||
-                lastName.EndsWith("oğlu", StringComparison.OrdinalIgnoreCase) ||
-                lastName.EndsWith("li", StringComparison.OrdinalIgnoreCase) ||
-                lastName.EndsWith("ci", StringComparison.OrdinalIgnoreCase) ||
-                lastName.EndsWith("cu", StringComparison.OrdinalIgnoreCase))
+            string normFirst = NormalizeName(firstName?.Trim() ?? string.Empty, "");
+            if (KnownTurkishFirstNames.Contains(firstName?.Trim() ?? string.Empty) ||
+                KnownTurkishFirstNames.Contains(normFirst))
+            {
+                return "TUR";
+            }
+
+            string normLast = NormalizeName(lastName?.Trim() ?? string.Empty, "");
+            if (normLast.EndsWith("oglu") ||
+                normLast.EndsWith("kaya") ||
+                normLast.EndsWith("demir") ||
+                normLast.EndsWith("yilmaz") ||
+                normLast.EndsWith("senel") ||
+                normLast.EndsWith("aksu") ||
+                normLast.EndsWith("ozbek") ||
+                normLast.EndsWith("turk"))
             {
                 return "TUR";
             }

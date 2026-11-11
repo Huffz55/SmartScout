@@ -148,4 +148,82 @@ public class QuestPdfScoutingReportGeneratorTests
         string header = Encoding.ASCII.GetString(pdfBytes, 0, 5);
         Assert.Equal("%PDF-", header);
     }
+
+    [Fact]
+    public void GenerateReportPdf_UnderTurkishLocale_ShouldSucceedAndMaintainStrictFormatting()
+    {
+        var prevCulture = System.Globalization.CultureInfo.CurrentCulture;
+        try
+        {
+            System.Globalization.CultureInfo.CurrentCulture = new System.Globalization.CultureInfo("tr-TR");
+
+            var model = new PlayerScoutingReportDto
+            {
+                PlayerId = Guid.NewGuid(),
+                FirstName = "Johnathan",
+                LastName = "Motley",
+                Position = "C/F",
+                Age = 31,
+                HeightCm = 206,
+                WeightKg = 104,
+                TeamName = "Hapoel Tel Aviv",
+                League = "EuroCup",
+                Season = 2026,
+                Archetype = "PaintAnchor",
+                RadarMetrics = new RadarMetricsDto(88.4, 76.2, 54.1, 89.5, 68.3, 85.1),
+                GamesPlayed = 24,
+                Minutes = 24.2m,
+                Points = 16.4m,
+                Assists = 2.1m,
+                Rebounds = 6.8m,
+                Steals = 0.8m,
+                Blocks = 1.1m,
+                FgPct = 0.625m,
+                Fg3Pct = 0.250m,
+                FtPct = 0.742m,
+                Turnovers = 2.3m,
+                TrueShootingPct = 0.667m,
+                UsagePct = 28.5m,
+                OffensiveReboundShare = 0.124m,
+                FreeThrowRate = 0.58m,
+                Pir = 20.4m,
+                PtsPer36 = 24.4m,
+                StocksPer36 = 2.8m,
+                PointsPer40 = 27.1m,
+                AssistsPer40 = 3.5m,
+                ReboundsPer40 = 11.2m,
+                FoulsCommittedPer36 = 5.7m,
+                FibaFoulTroubleRisk = "High Foul Risk",
+                TwoPointScoringSharePct = 60.0,
+                ThreePointScoringSharePct = 21.0,
+                FreeThrowScoringSharePct = 19.0,
+                EstimatedMarketValueTier = "Tier-1 ($2.5M - $15M+ NBA)",
+                ContractExpirySeason = 2026,
+                EuropeanCompatibilityIndex = 74.5,
+                DefensivePressureIndex = 62.0,
+                TacticalVerdict = "Johnathan Motley is classified as a PaintAnchor (MVP-Caliber Franchise Cornerstone).",
+                CareerHistory = new List<CareerSeasonStintDto>
+                {
+                    new() { Season = 2024, League = "EuroLeague", TeamName = "Fenerbahce Beko", GamesPlayed = 36, Points = 14.5m, PtsPer36 = 23.1m, TrueShootingPct = 0.671m, EuroLeagueTransitionIndex = 92.4m },
+                    new() { Season = 2025, League = "EuroCup", TeamName = "Hapoel Tel Aviv", GamesPlayed = 18, Points = 17.5m, PtsPer36 = 25.8m, TrueShootingPct = 0.680m, EuroLeagueTransitionIndex = 95.0m }
+                }
+            };
+
+            byte[] pdfBytes = _generator.GenerateReportPdf(model);
+
+            Assert.NotNull(pdfBytes);
+            Assert.True(pdfBytes.Length > 2000);
+            string header = Encoding.ASCII.GetString(pdfBytes, 0, 5);
+            Assert.Equal("%PDF-", header);
+
+            // Verify strict 1-page budget
+            string pdfText = Encoding.ASCII.GetString(pdfBytes);
+            int pageCount = System.Text.RegularExpressions.Regex.Matches(pdfText, @"/Type\s*/Page\b").Count;
+            Assert.Equal(1, pageCount);
+        }
+        finally
+        {
+            System.Globalization.CultureInfo.CurrentCulture = prevCulture;
+        }
+    }
 }
