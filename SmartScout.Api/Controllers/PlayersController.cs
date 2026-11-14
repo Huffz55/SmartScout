@@ -2,10 +2,15 @@ using MediatR;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using SmartScout.Api.Attributes;
 using SmartScout.Application.Interfaces;
 using SmartScout.Application.UseCases.Players;
+using SmartScout.Domain.Entities;
+using SmartScout.Infrastructure.Options;
+using SmartScout.Infrastructure.Services;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -235,9 +240,28 @@ public class PlayersController : ControllerBase
     [EnableRateLimiting("SyncPolicy")]
     public async Task<IActionResult> SyncLiveInjuries(
         [FromServices] IPlayerInjurySyncService injurySyncService,
+        [FromServices] ISmartScoutDbContext dbContext,
+        [FromServices] IOptions<ScraperOptions> scraperOptions,
         CancellationToken cancellationToken = default)
     {
         var result = await injurySyncService.SyncLiveInjuriesAsync(cancellationToken);
+
+        int liveSeason = scraperOptions.Value.LiveSeasonYear;
+        var injuryLog = await dbContext.IngestionJobLogs
+            .FirstOrDefaultAsync(l => l.LeagueCode == LiveSyncCoordinator.InjuryCheckpointCode && l.Season == liveSeason, cancellationToken);
+
+        if (injuryLog == null)
+        {
+            injuryLog = new IngestionJobLog(LiveSyncCoordinator.InjuryCheckpointCode, liveSeason, "Completed", result.MatchedPlayers);
+            await dbContext.IngestionJobLogs.AddAsync(injuryLog, cancellationToken);
+        }
+        else
+        {
+            injuryLog.MarkCompleted(result.MatchedPlayers);
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
         return Ok(new
         {
             Message = $"Live injury sync completed: {result.MatchedPlayers} matched players ({result.InsertedCount} inserted, {result.UpdatedCount} updated, {result.RecoveredMarkedCount} recovered).",
@@ -248,6 +272,59 @@ public class PlayersController : ControllerBase
             result.RecoveredMarkedCount,
             result.SourceCounts,
             result.SampleMatched
+        });
+    }
+
+    [HttpGet("sync-status")]
+    public async Task<IActionResult> GetSyncStatus(
+        [FromServices] ISmartScoutDbContext dbContext,
+        [FromServices] IOptions<ScraperOptions> scraperOptions,
+        CancellationToken cancellationToken = default)
+    {
+        var opts = scraperOptions.Value;
+
+        var lastInjuryCheckpoint = await dbContext.IngestionJobLogs
+            .AsNoTracking()
+            .Where(l => l.LeagueCode == LiveSyncCoordinator.InjuryCheckpointCode && l.Status == "Completed")
+            .OrderByDescending(l => l.UpdatedAt)
+            .Select(l => (DateTime?)l.UpdatedAt)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var lastInjuryReportedAt = await dbContext.PlayerInjuries
+            .AsNoTracking()
+            .MaxAsync(i => (DateTime?)i.ReportedAt, cancellationToken);
+
+        var lastSeasonStatSyncAt = await dbContext.IngestionJobLogs
+            .AsNoTracking()
+            .Where(l => l.Season == opts.LiveSeasonYear
+                && l.LeagueCode != LiveSyncCoordinator.InjuryCheckpointCode
+                && l.Status == "Completed")
+            .MaxAsync(l => (DateTime?)l.UpdatedAt, cancellationToken);
+
+        int activeInjuriesCount = await dbContext.PlayerInjuries
+            .AsNoTracking()
+            .CountAsync(i => i.Status != "Recovered" && i.Status != "Healthy" && i.Status != "Cleared", cancellationToken);
+
+        int totalPlayersCount = await dbContext.Players
+            .AsNoTracking()
+            .CountAsync(cancellationToken);
+
+        int liveSeasonStatRowsCount = await dbContext.SeasonStats
+            .AsNoTracking()
+            .CountAsync(s => s.Season == opts.LiveSeasonYear, cancellationToken);
+
+        return Ok(new
+        {
+            opts.EnableBackgroundSync,
+            opts.EnableLiveInjuryAutoSync,
+            opts.InjurySyncIntervalHours,
+            opts.CurrentSeasonStatRefreshHours,
+            opts.LiveSeasonYear,
+            LastInjurySyncAt = lastInjuryCheckpoint ?? lastInjuryReportedAt,
+            LastSeasonStatSyncAt = lastSeasonStatSyncAt,
+            ActiveInjuriesCount = activeInjuriesCount,
+            TotalPlayersCount = totalPlayersCount,
+            LiveSeasonStatRowsCount = liveSeasonStatRowsCount
         });
     }
 
@@ -370,5 +447,118 @@ public class PlayersController : ControllerBase
             .ToListAsync(cancellationToken);
 
         return Ok(watchlisted);
+    }
+
+    [HttpPost("watchlist/seed-demo")]
+    public async Task<IActionResult> SeedDemoWatchlist(
+        [FromServices] ISmartScoutDbContext dbContext,
+        [FromServices] IOptions<ScraperOptions> scraperOptions,
+        CancellationToken cancellationToken = default)
+    {
+        int existingCount = await dbContext.Players.CountAsync(p => p.IsWatchlisted, cancellationToken);
+        if (existingCount > 0)
+        {
+            return Ok(new
+            {
+                AddedCount = 0,
+                TotalWatchlisted = existingCount,
+                Players = Array.Empty<object>()
+            });
+        }
+
+        int minSeason = scraperOptions.Value.LiveSeasonYear - 1;
+        var candidates = await dbContext.Players
+            .Include(p => p.SeasonStats)
+            .Where(p => !p.IsWatchlisted
+                && p.BirthDate.HasValue
+                && !string.IsNullOrWhiteSpace(p.Nationality)
+                && p.Nationality != "INTL"
+                && p.SeasonStats.Any(s => s.Season >= minSeason && s.GamesPlayed >= 10 && s.EuroLeagueTransitionIndex.HasValue))
+            .OrderByDescending(p => p.SeasonStats
+                .Where(s => s.Season >= minSeason)
+                .Max(s => s.EuroLeagueTransitionIndex) ?? 0m)
+            .Take(120)
+            .ToListAsync(cancellationToken);
+
+        var selected = SelectDiverseDemoTargets(candidates, maxCount: 6);
+        foreach (var player in selected)
+        {
+            player.ToggleWatchlist();
+        }
+
+        if (selected.Count > 0)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        return Ok(new
+        {
+            AddedCount = selected.Count,
+            TotalWatchlisted = selected.Count,
+            Players = selected.Select(p => new
+            {
+                p.Id,
+                p.FullName,
+                p.League,
+                p.PrimaryPosition,
+                p.Nationality
+            })
+        });
+    }
+
+    internal static List<Player> SelectDiverseDemoTargets(IEnumerable<Player> candidates, int maxCount = 6)
+    {
+        var ranked = candidates
+            .OrderByDescending(p => p.SeasonStats
+                .OrderByDescending(s => s.Season)
+                .Select(s => s.EuroLeagueTransitionIndex ?? 0m)
+                .FirstOrDefault())
+            .ThenBy(p => p.CurrentAge ?? 30)
+            .ThenBy(p => p.FullName)
+            .ToList();
+
+        var chosen = new List<Player>();
+        var usedIds = new HashSet<Guid>();
+        var usedLeagues = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        static string BucketPos(Player p)
+        {
+            var pos = (p.PrimaryPosition ?? p.Position ?? string.Empty).ToUpperInvariant();
+            if (pos.StartsWith("C")) return "C";
+            if (pos.Contains("PG") || pos.Contains("SG") || pos == "G" || pos == "G-F") return "G";
+            return "F";
+        }
+
+        foreach (string bucket in new[] { "G", "F", "C" })
+        {
+            var pick = ranked.FirstOrDefault(p =>
+                !usedIds.Contains(p.Id)
+                && BucketPos(p) == bucket
+                && !usedLeagues.Contains(p.League ?? string.Empty));
+
+            pick ??= ranked.FirstOrDefault(p => !usedIds.Contains(p.Id) && BucketPos(p) == bucket);
+            if (pick != null && chosen.Count < maxCount)
+            {
+                chosen.Add(pick);
+                usedIds.Add(pick.Id);
+                if (!string.IsNullOrWhiteSpace(pick.League))
+                    usedLeagues.Add(pick.League);
+            }
+        }
+
+        foreach (var player in ranked)
+        {
+            if (chosen.Count >= maxCount) break;
+            if (usedIds.Contains(player.Id)) continue;
+            if (!string.IsNullOrWhiteSpace(player.League) && usedLeagues.Contains(player.League) && ranked.Any(r => !usedIds.Contains(r.Id) && !usedLeagues.Contains(r.League ?? string.Empty)))
+                continue;
+
+            chosen.Add(player);
+            usedIds.Add(player.Id);
+            if (!string.IsNullOrWhiteSpace(player.League))
+                usedLeagues.Add(player.League);
+        }
+
+        return chosen;
     }
 }

@@ -19,6 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\SmartScout.Api\SmartScout.Api.csproj" />
     <ProjectReference Include="..\SmartScout.Application\SmartScout.Application.csproj" />
     <ProjectReference Include="..\SmartScout.Infrastructure\SmartScout.Infrastructure.csproj" />
     <ProjectReference Include="..\SmartScout.Domain\SmartScout.Domain.csproj" />

@@ -1,41 +1,74 @@
-# SmartScout 🏀📊
+# SmartScout
 
-**SmartScout** is a high-performance, "Moneyball"-inspired basketball analytics engine and ETL (Extract, Transform, Load) pipeline built with **.NET 10**. It is designed to autonomously scrape, process, and analyze full-career NBA data to identify undervalued talent ("Sleepers") using advanced metrics.
+**SmartScout** is a Moneyball-inspired global basketball analytics platform, automated ETL pipeline, and scouting workbench built with **.NET 10** and **PostgreSQL**. It ingests multi-season box scores, shooting splits, biographical data, and live injury reports across **15 global basketball leagues** to surface undervalued prospects ("Sleepers") and transferable EuroLeague/NBA role fits.
 
-## 🚀 Features
+## Core Capabilities
 
-*   **Mass-Import Career Scraping:** Extracts a player's entire career history in a single HTTP request using optimized DOM parsing.
-*   **Advanced Analytics:** Calculates and stores crucial modern basketball metrics including **PER** (Player Efficiency Rating), **TS%** (True Shooting), **USG%** (Usage Rate), **WS** (Win Shares), and **BPM** (Box Plus/Minus).
-*   **Idempotent Execution:** The background worker acts as a smart engine. It remembers processed entities, allowing the pipeline to be safely paused and resumed without data duplication.
-*   **Resilient Network Layer:** Integrates **Polly** for intelligent retry policies, graceful degradation, and strict rate-limit compliance to prevent IP bans.
-*   **Trade-Proof Parsing:** Utilizes custom string-split extraction logic that dynamically adapts to mid-season trades and DOM variations without relying on fragile HTML IDs.
+* **Sleeper & Breakout Engine:** Ranks prospects using **EuroLeague Transition Index (ETI)**, **Pace-Adjusted Impact**, true shooting efficiency, perimeter spacing (`3PM`/`3P%`), defensive disruption (`Stocks/36`), and **Multi-Season Stability**, **Young Prospect (U-24)**, and **Year-over-Year Breakout** filters.
+* **Global 15-League Ingestion:** Covers NBA, G-League, NCAA D1, EuroLeague, EuroCup, BCL, BSL (Turkey), ACB (Spain), LNB (France), BBL (Germany), Lega A (Italy), ABA, GBL (Greece), LKL (Lithuania), and VTB with automatic multi-stint (`TOT`/`2TM`) deduplication.
+* **Live 8-Feed Injury Tracking:** Syncs active injuries and automatic recovery status from ESPN NBA, Basketball-Reference NBA, Covers NBA, Covers NCAAB, CBS NBA, and Rotowire (NBA / EuroLeague / NCAA).
+* **Multi-Source Bio Enrichment:** Resolves missing dates of birth, nationalities, heights, and weights via Wikipedia, Wikidata (`P27` citizenship & `P569` birth date), Basketball-Reference, and EuroLeague v2 feeds.
+* **Scout Workbench UI:** Interactive web console (`SmartScout.Api/wwwroot/index.html`) featuring:
+  * **Sleepers & Breakouts** and **Smart Finder** natural-language filtering
+  * **Player Dossier Modal** with career trajectory charts, medical history, and **QuestPDF** downloadable scouting reports (`/api/players/{id}/report.pdf`)
+  * **Head-to-Head Comparison** with dual-overlay radar analytics
+  * **Scout Watchlist & BSL 4+3 Foreign Quota Simulator** with CSV export and one-click Demo Target Board seeding
+  * **Data Sync Hub** displaying automated background sync cadence, database coverage, and session-scoped `X-Api-Key` entry
 
-## 🏗️ Architecture & Tech Stack
+## Architecture & Tech Stack
 
-The application strictly follows **Clean Architecture** principles, separating domain logic from external concerns, and implements the **CQRS** (Command Query Responsibility Segregation) pattern.
+* **Clean Architecture + CQRS:** `SmartScout.Domain`, `SmartScout.Application`, `SmartScout.Infrastructure`, `SmartScout.Api`, `SmartScout.UnitTests`
+* **Backend:** .NET 10 Web API, MediatR, Entity Framework Core + Npgsql (PostgreSQL), Polly resilience policies, ASP.NET Core Rate Limiting
+* **Scraping & Reporting:** HtmlAgilityPack, Microsoft.Playwright, QuestPDF
 
-*   **Framework:** .NET 10 Web API
-*   **Database:** PostgreSQL
-*   **ORM:** Entity Framework Core
-*   **Mediator Pattern:** MediatR
-*   **Scraping Engine:** HtmlAgilityPack
-*   **Resilience:** Polly
+## Security & Configuration
 
-## 🗄️ Database Schema
+No production secrets or database passwords are stored in `SmartScout.Api/appsettings.json`. Supply sensitive settings via environment variables, `.NET User Secrets`, or gitignored `SmartScout.Api/appsettings.Development.json`:
 
-The database utilizes a highly optimized **1-to-Many** relationship architecture:
-*   `Players`: Stores normalized biographical data (Height, Weight, Position, etc.).
-*   `SeasonStats`: Stores multiple rows per player representing their complete year-by-year career trajectory, using `numeric` data types for zero-precision-loss advanced metric queries.
+* `ConnectionStrings__DefaultConnection` — PostgreSQL connection string
+* `Authentication__ApiKey` (or `SMARTSCOUT_API_KEY`) — Required header (`X-Api-Key`) for admin POST endpoints (`sync`, `sync-stats`, `sync-injuries`, `enrich-bios`); endpoints fail closed (`503`) if unconfigured
+* `Database__AutoMigrateOnStartup` — Set to `true` (e.g. in Docker) to run EF Core migrations automatically on boot
 
-## ⚙️ Getting Started
+See [.env.example](.env.example) for the full variable list.
 
-### Prerequisites
-*   [.NET 10 SDK](https://dotnet.microsoft.com/)
-*   [PostgreSQL](https://www.postgresql.org/)
+## Getting Started
 
-### Installation & Setup
+### Option 1: Docker Compose (Recommended One-Command Setup)
 
-1. **Clone the repository:**
+```bash
+cp .env.example .env
+# Edit .env with strong POSTGRES_PASSWORD and SMARTSCOUT_API_KEY values
+docker compose up -d --build
+```
+
+The API + web console will be available at `http://localhost:6050` (health check at `http://localhost:6050/health`).
+
+### Option 2: Local .NET 10 SDK + PostgreSQL
+
+#### Prerequisites
+* [.NET 10 SDK](https://dotnet.microsoft.com/)
+* PostgreSQL 16+
+
+#### Setup
+
+1. Create a local gitignored `SmartScout.Api/appsettings.Development.json`:
+   ```json
+   {
+     "ConnectionStrings": {
+       "DefaultConnection": "Host=localhost;Database=SmartScoutDb;Username=postgres;Password=YOUR_PASSWORD"
+     },
+     "Authentication": {
+       "ApiKey": "your-local-sync-api-key"
+     }
+   }
+   ```
+2. Apply EF Core migrations:
    ```bash
-   git clone [https://github.com/YOUR_USERNAME/SmartScout.git](https://github.com/YOUR_USERNAME/SmartScout.git)
-   cd SmartScout
+   dotnet ef database update --project SmartScout.Infrastructure --startup-project SmartScout.Api
+   ```
+3. Run tests and launch the API:
+   ```bash
+   dotnet test SmartScout.slnx
+   dotnet run --project SmartScout.Api
+   ```
+4. Open `http://localhost:6050` in your browser (Swagger UI available in Development at `/swagger`).

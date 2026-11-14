@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.Configuration;
@@ -16,6 +17,21 @@ public class ApiKeyAuthAttribute : Attribute, IAsyncActionFilter
 
     public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
     {
+        var configuration = context.HttpContext.RequestServices.GetRequiredService<IConfiguration>();
+        string? configuredApiKey = ResolveConfiguredApiKey(configuration);
+
+        if (string.IsNullOrWhiteSpace(configuredApiKey))
+        {
+            context.Result = new ObjectResult(new
+            {
+                Message = "Sync API authentication key is not configured on this server. Set Authentication:ApiKey or SMARTSCOUT_API_KEY."
+            })
+            {
+                StatusCode = StatusCodes.Status503ServiceUnavailable
+            };
+            return;
+        }
+
         if (!context.HttpContext.Request.Headers.TryGetValue(ApiKeyHeaderName, out var potentialApiKey) || string.IsNullOrWhiteSpace(potentialApiKey))
         {
             if (!context.HttpContext.Request.Query.TryGetValue("apiKey", out potentialApiKey) || string.IsNullOrWhiteSpace(potentialApiKey))
@@ -25,15 +41,7 @@ public class ApiKeyAuthAttribute : Attribute, IAsyncActionFilter
             }
         }
 
-        var configuration = context.HttpContext.RequestServices.GetRequiredService<IConfiguration>();
-        var configuredApiKey = configuration.GetValue<string>("Authentication:ApiKey");
-
-        if (string.IsNullOrWhiteSpace(configuredApiKey))
-        {
-            configuredApiKey = "dev-smartscout-secure-key";
-        }
-
-        byte[] providedBytes = Encoding.UTF8.GetBytes(potentialApiKey!);
+        byte[] providedBytes = Encoding.UTF8.GetBytes(potentialApiKey.ToString());
         byte[] configuredBytes = Encoding.UTF8.GetBytes(configuredApiKey);
 
         // Constant-time comparison to prevent timing attack side-channels
@@ -44,5 +52,18 @@ public class ApiKeyAuthAttribute : Attribute, IAsyncActionFilter
         }
 
         await next();
+    }
+
+    internal static string? ResolveConfiguredApiKey(IConfiguration configuration)
+    {
+        var apiKey = configuration.GetValue<string>("Authentication:ApiKey");
+        if (!string.IsNullOrWhiteSpace(apiKey))
+            return apiKey;
+
+        apiKey = configuration.GetValue<string>("SMARTSCOUT_API_KEY");
+        if (!string.IsNullOrWhiteSpace(apiKey))
+            return apiKey;
+
+        return Environment.GetEnvironmentVariable("SMARTSCOUT_API_KEY");
     }
 }

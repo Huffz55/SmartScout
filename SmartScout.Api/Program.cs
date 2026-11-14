@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.EntityFrameworkCore;
 using SmartScout.Api.Middleware;
 using SmartScout.Application;
 using SmartScout.Infrastructure;
+using SmartScout.Infrastructure.Data;
 using System;
 using System.Threading.RateLimiting;
 
@@ -71,6 +73,13 @@ builder.Services.AddHostedService<SmartScout.Api.BackgroundServices.SeasonStatSy
 
 var app = builder.Build();
 
+if (app.Configuration.GetValue<bool>("Database:AutoMigrateOnStartup"))
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<SmartScoutDbContext>();
+    await db.Database.MigrateAsync();
+}
+
 // Global exception handling (first in pipeline)
 app.UseExceptionHandler();
 
@@ -81,7 +90,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
-else
+else if (app.Configuration.GetValue<bool>("Hosting:EnableHttpsRedirection"))
 {
     app.UseHttpsRedirection();
 }

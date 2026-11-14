@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: smartscout-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-SmartScoutDb}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports:
+      - "5432:5432"
+    volumes:
+      - smartscout_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-SmartScoutDb}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  smartscout-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: smartscout-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${SMARTSCOUT_PORT:-6050}:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=${POSTGRES_DB:-SmartScoutDb};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      Authentication__ApiKey: ${SMARTSCOUT_API_KEY:?Set SMARTSCOUT_API_KEY in .env}
+      Database__AutoMigrateOnStartup: ${SMARTSCOUT_AUTO_MIGRATE:-true}
+      Hosting__EnableHttpsRedirection: "false"
+      ScraperSettings__Headless: "true"
+      ScraperSettings__EnableBackgroundSync: ${SMARTSCOUT_ENABLE_BACKGROUND_SYNC:-true}
+      ScraperSettings__EnableLiveInjuryAutoSync: ${SMARTSCOUT_ENABLE_INJURY_AUTO_SYNC:-true}
+
+volumes:
+  smartscout_pgdata:

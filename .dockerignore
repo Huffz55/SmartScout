@@ -1,0 +1,17 @@
+**/.git
+**/.vs
+**/.vscode
+**/.idea
+**/bin
+**/obj
+**/out
+**/publish
+**/TestResults
+.env
+SmartScout.Api/appsettings.Development.json
+SmartScout.Api/appsettings.Production.json
+SmartScout.Api/appsettings.Staging.json
+secrets.json
+*.user
+*.suo
+*.log
