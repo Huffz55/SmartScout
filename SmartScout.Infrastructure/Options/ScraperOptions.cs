@@ -11,6 +11,11 @@ public class ScraperOptions
     public string UserAgent { get; set; } = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36";
     public int MaxSuffixAttempts { get; set; } = 3;
     public bool EnableBackgroundSync { get; set; } = false;
+    public bool EnableLiveInjuryAutoSync { get; set; } = true;
+    public int InjurySyncIntervalHours { get; set; } = 4;
+    public int CurrentSeasonStatRefreshHours { get; set; } = 24;
+    public int LiveSeasonYear { get; set; } = 2027;
+    public int StartupSyncDelaySeconds { get; set; } = 20;
     public bool EnableDomesticLeagueFullSweep { get; set; } = false;
 
     // Multi-season European and international basketball ingestion from 2018-19 (2019) to 2026-27 (2027)

@@ -95,12 +95,14 @@ public static class InfrastructureServiceRegistration
             client.DefaultRequestHeaders.Add("Accept", "application/json");
         });
 
-        // Live Player Injury Sync Service (ESPN, Basketball-Reference, Rotowire, CBS)
+        // Live Player Injury Sync Service (ESPN, Basketball-Reference, Rotowire, CBS, Covers)
         services.AddHttpClient<IPlayerInjurySyncService, PlayerInjurySyncService>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(25);
             client.DefaultRequestHeaders.Add("Accept", "application/json, text/html");
         });
+
+        services.AddScoped<LiveSyncCoordinator>();
 
         return services;
     }
