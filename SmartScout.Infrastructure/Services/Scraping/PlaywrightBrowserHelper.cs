@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Playwright;
@@ -33,6 +34,31 @@ public static class PlaywrightBrowserHelper
             catch (Exception ex)
             {
                 logger?.LogWarning(ex, "Failed to launch browser with channel '{Channel}'. Trying next fallback...", channel);
+            }
+        }
+
+        string[] explicitPaths =
+        {
+            @"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            @"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+            @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            @"C:\Program Files\Microsoft\Edge\Application\msedge.exe"
+        };
+
+        foreach (var exePath in explicitPaths)
+        {
+            if (!File.Exists(exePath)) continue;
+            try
+            {
+                return await playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
+                {
+                    Headless = headless,
+                    ExecutablePath = exePath
+                });
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(ex, "Failed to launch browser at '{ExecutablePath}'.", exePath);
             }
         }
 

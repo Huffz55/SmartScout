@@ -254,7 +254,41 @@ public class QuestPdfScoutingReportGenerator : IScoutingReportGenerator
                 c.Item().PaddingTop(2).Text(model.TacticalVerdict).FontSize(8f).LineHeight(1.2f).FontColor(Color.FromHex("#1E293B"));
             });
 
-            // 7. Scout Notes Box (if any)
+            // 7. Verified Medical & Injury Log
+            col.Item().Height(5);
+            if (model.Injuries != null && model.Injuries.Count > 0)
+            {
+                bool hasActive = model.Injuries.Exists(i => i.IsActive);
+                string borderHex = hasActive ? "#DC2626" : "#0EA5E9";
+                string bgHex = hasActive ? "#FEF2F2" : "#F0F9FF";
+                string titleHex = hasActive ? "#B91C1C" : "#0369A1";
+                col.Item().Background(Color.FromHex(bgHex)).Border(1).BorderColor(Color.FromHex(borderHex)).Padding(5).Column(c =>
+                {
+                    c.Item().Text(hasActive ? "MEDICAL & INJURY ALERT (ACTIVE REPORT)" : "MEDICAL & INJURY HISTORY").FontSize(7.5f).Bold().FontColor(Color.FromHex(titleHex));
+                    foreach (var inj in model.Injuries.Count > 4 ? model.Injuries.GetRange(0, 4) : model.Injuries)
+                    {
+                        string detail = $"{inj.Status} — {inj.InjuryType} ({inj.Season - 1}-{inj.Season.ToString()[^2..]} Season";
+                        if (inj.GamesMissed > 0) detail += $", {inj.GamesMissed} GP missed";
+                        if (!string.IsNullOrWhiteSpace(inj.Source)) detail += $", Source: {inj.Source}";
+                        detail += $", Updated: {inj.ReportedAt:yyyy-MM-dd})";
+                        c.Item().PaddingTop(1).Text(detail).FontSize(7f).Bold().FontColor(Color.FromHex("#1E293B"));
+                        if (!string.IsNullOrWhiteSpace(inj.Notes))
+                        {
+                            c.Item().Text(inj.Notes).FontSize(6.5f).FontColor(Color.FromHex("#475569"));
+                        }
+                    }
+                });
+            }
+            else
+            {
+                col.Item().Background(Color.FromHex("#F0FDF4")).Border(1).BorderColor(Color.FromHex("#10B981")).Padding(4).Row(r =>
+                {
+                    r.RelativeItem().Text("MEDICAL CLEARANCE: Clean injury file — zero active or recorded injury flags across synced feeds.")
+                        .FontSize(7f).SemiBold().FontColor(Color.FromHex("#047857"));
+                });
+            }
+
+            // 8. Scout Notes Box (if any)
             if (!string.IsNullOrWhiteSpace(model.ScoutNotes))
             {
                 col.Item().Height(5);

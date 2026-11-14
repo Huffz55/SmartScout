@@ -920,6 +920,10 @@
               </p>
             </div>
             <div class="flex items-center space-x-2">
+              <button id="btn-sync-injuries" onclick="triggerInjurySync()" class="px-4 py-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 font-semibold text-xs border border-rose-500/40 transition flex items-center space-x-1.5 shadow-sm">
+                <i data-lucide="activity" class="w-3.5 h-3.5"></i>
+                <span>Sync Live Injuries</span>
+              </button>
               <button id="btn-enrich-bios" onclick="triggerBioEnrichment()" class="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-semibold text-xs border border-slate-700 transition flex items-center space-x-1.5 shadow-sm">
                 <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
                 <span>Sync Metadata (Batch 50)</span>
@@ -1611,6 +1615,20 @@
           </div>
         </div>
 
+        <!-- Verified Medical & Injury Log -->
+        <div id="modal-injuries-section" class="glass-card rounded-xl p-4 space-y-2.5">
+          <div class="flex items-center justify-between">
+            <h4 class="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center space-x-1.5">
+              <i data-lucide="activity" class="w-3.5 h-3.5 text-rose-400"></i>
+              <span>Medical &amp; Injury Report Log</span>
+            </h4>
+            <span id="modal-injury-badge" class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">Clean Medical File</span>
+          </div>
+          <div id="modal-injuries-list" class="space-y-2 text-xs">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+
         <!-- Confidential Scout Observations & Field Notes -->
         <div class="glass-card rounded-xl p-4 space-y-2">
           <div class="flex items-center justify-between">
@@ -2089,6 +2107,7 @@
                   ${formatCategory(categoryVal)}
                 </span>
                 ${p.isTwoWayPlayer ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30">2-Way</span>` : ''}
+                ${p.activeInjuryStatus ? `<span class="px-2 py-0.5 rounded text-[10px] font-bold ${p.activeInjuryStatus.toLowerCase().includes('out') ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'}" title="${p.activeInjuryDetail || p.activeInjuryStatus}">🏥 ${p.activeInjuryStatus}${p.activeInjuryDetail ? ': ' + p.activeInjuryDetail : ''}</span>` : ''}
                 ${p.euroLeagueTransitionIndex ? `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">ETI ${p.euroLeagueTransitionIndex.toFixed(1)}</span>` : ''}
                 <span class="text-[11px] font-semibold ${isMulti ? 'text-cyan-300 bg-cyan-950/80 border border-cyan-800/40' : 'text-slate-400 bg-slate-800/80'} px-2 py-0.5 rounded">${seasonBadgeText}</span>
               </div>
@@ -2526,6 +2545,9 @@
 
           // Multi-Season Career Trajectory
           renderCareerTrajectory(p.careerHistory || [], p.playerId || playerId, p.season);
+
+          // Medical & Injury Log
+          renderPlayerInjuries(p.injuries || []);
 
           // Confidential Scout Notes
           const notesEl = document.getElementById('modal-scout-notes');
@@ -3817,7 +3839,105 @@
         consoleBox.scrollTop = consoleBox.scrollHeight;
       } finally {
         btn.disabled = false;
-        btn.innerHTML = `<i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i><span>Enrich Player Metadata (Batch 50)</span>`;
+        btn.innerHTML = `<i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i><span>Sync Metadata (Batch 50)</span>`;
+        lucide.createIcons();
+      }
+    }
+
+    function renderPlayerInjuries(injuries) {
+      const badgeEl = document.getElementById('modal-injury-badge');
+      const listEl = document.getElementById('modal-injuries-list');
+      if (!badgeEl || !listEl) return;
+
+      if (!injuries || injuries.length === 0) {
+        badgeEl.innerText = 'Clean Medical File';
+        badgeEl.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30';
+        listEl.innerHTML = `<div class="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/80 text-slate-400">No active or recorded injuries on file across synchronized medical feeds.</div>`;
+        return;
+      }
+
+      const activeCount = injuries.filter(i => i.isActive).length;
+      if (activeCount > 0) {
+        badgeEl.innerText = `${activeCount} Active Injury Alert${activeCount > 1 ? 's' : ''}`;
+        badgeEl.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40';
+      } else {
+        badgeEl.innerText = `${injuries.length} Historical Record${injuries.length > 1 ? 's' : ''}`;
+        badgeEl.className = 'px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30';
+      }
+
+      listEl.innerHTML = injuries.map(inj => {
+        const pillClass = inj.isActive
+          ? (inj.status.toLowerCase().includes('out')
+              ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+              : 'bg-amber-500/20 text-amber-300 border border-amber-500/40')
+          : 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30';
+        const dateStr = inj.reportedAt ? new Date(inj.reportedAt).toISOString().slice(0, 10) : '';
+        const seasonStr = inj.season ? `${inj.season - 1}-${String(inj.season).slice(-2)}` : '';
+        return `
+          <div class="p-3 rounded-lg bg-slate-950/70 border border-slate-800/80 flex flex-col gap-1">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded text-[10px] font-bold ${pillClass}">${inj.status}</span>
+                <span class="font-semibold text-white">${inj.injuryType}</span>
+                ${seasonStr ? `<span class="text-[11px] text-slate-400">• ${seasonStr}</span>` : ''}
+                ${inj.gamesMissed > 0 ? `<span class="text-[11px] text-amber-300">• ${inj.gamesMissed} GP missed</span>` : ''}
+              </div>
+              <div class="text-[11px] text-slate-400 flex items-center gap-2">
+                ${inj.source ? `<span class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">${inj.source}</span>` : ''}
+                ${dateStr ? `<span>${dateStr}</span>` : ''}
+              </div>
+            </div>
+            ${inj.notes ? `<p class="text-[11px] text-slate-300 leading-relaxed">${inj.notes}</p>` : ''}
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function triggerInjurySync() {
+      const btn = document.getElementById('btn-sync-injuries');
+      const resBox = document.getElementById('enrichment-result-box');
+      const statusTitle = document.getElementById('enrichment-status-title');
+      const statusCount = document.getElementById('enrichment-status-count');
+      const tagsContainer = document.getElementById('enrichment-player-tags');
+      const consoleBox = document.getElementById('sync-console');
+
+      btn.disabled = true;
+      btn.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i><span>Syncing Injuries...</span>`;
+      lucide.createIcons();
+
+      consoleBox.innerHTML += `\n[${new Date().toLocaleTimeString()}]: Starting Live Injury Feed Sync (ESPN NBA, BRef NBA, Rotowire EuroLeague/NCAA, CBS)...`;
+      consoleBox.scrollTop = consoleBox.scrollHeight;
+
+      try {
+        const res = await fetch('/api/players/sync-injuries', {
+          method: 'POST',
+          headers: { 'X-Api-Key': 'dev-smartscout-secure-key' }
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          consoleBox.innerHTML += `\n[${new Date().toLocaleTimeString()}]: [ERROR] Injury sync failed: ${data.detail || data.message || res.statusText}`;
+          consoleBox.scrollTop = consoleBox.scrollHeight;
+          return;
+        }
+
+        consoleBox.innerHTML += `\n[${new Date().toLocaleTimeString()}]: [SUCCESS] ${data.message}`;
+        consoleBox.scrollTop = consoleBox.scrollHeight;
+
+        resBox.classList.remove('hidden');
+        statusTitle.innerText = 'Live Injury Sync Completed';
+        statusCount.innerText = `${data.matchedPlayers} matched (${data.insertedCount} new, ${data.updatedCount} updated)`;
+        tagsContainer.innerHTML = (data.sampleMatched || []).map(x => `
+          <span class="px-2 py-0.5 rounded bg-slate-800 border border-rose-500/30 text-slate-200">
+            <b class="text-white">${x.playerName}</b>
+            <span class="text-rose-300">(${x.status} • ${x.injuryType})</span>
+          </span>
+        `).join('');
+      } catch (err) {
+        consoleBox.innerHTML += `\n[${new Date().toLocaleTimeString()}]: [ERROR] Injury sync network error: ${err.message}`;
+        consoleBox.scrollTop = consoleBox.scrollHeight;
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<i data-lucide="activity" class="w-3.5 h-3.5"></i><span>Sync Live Injuries</span>`;
         lucide.createIcons();
       }
     }

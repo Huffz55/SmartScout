@@ -158,4 +158,52 @@ public class WikipediaBioEnrichmentServiceTests
         var result = SmartScout.Domain.Entities.Player.DetectNationality(first, last, team);
         Assert.Equal(expected, result);
     }
+
+    [Fact]
+    public void ParseWikitextBio_ShouldExtractNationalityFromTrailingBirthPlaceCountryWithoutStateConfusion()
+    {
+        string wikitext = @"
+{{Infobox basketball biography
+| name = Example Guard
+| birth_place = [[Atlanta]], [[Georgia (U.S. state)|Georgia]], U.S.
+| position = Point guard
+}}";
+
+        var bio = WikipediaBioEnrichmentService.ParseWikitextBio(wikitext);
+
+        Assert.Equal("USA", bio.Nationality);
+    }
+
+    [Fact]
+    public void ResolveWikidataNationality_ShouldSkipDefunctCountriesWhenModernSuccessorExists()
+    {
+        var map = new System.Collections.Generic.Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Q403"] = "SRB",
+            ["Q29"] = "ESP",
+            ["Q36704"] = "SRB"
+        };
+
+        var result = WikipediaBioEnrichmentService.ResolveWikidataNationality(new[] { "Q36704", "Q403", "Q29" }, map);
+
+        Assert.Equal("SRB / ESP", result);
+    }
+
+    [Fact]
+    public void ParseBasketballReferencePlayerPage_ShouldExtractNationalityFromBirthplaceCountryLink()
+    {
+        string html = @"
+<div id=""meta"">
+  <span data-birth=""2002-07-14"">July 14, 2002</span>
+  <span>(206cm, 102kg)</span>
+  <a href=""/friv/birthplaces.fcgi?country=US&amp;state=OH"">Ohio</a>
+</div>";
+
+        var bio = WikipediaBioEnrichmentService.ParseBasketballReferencePlayerPage(html);
+
+        Assert.Equal("USA", bio.Nationality);
+        Assert.Equal(new DateTime(2002, 7, 14, 0, 0, 0, DateTimeKind.Utc), bio.BirthDate);
+        Assert.Equal(206, bio.HeightCm);
+        Assert.Equal(102, bio.WeightKg);
+    }
 }

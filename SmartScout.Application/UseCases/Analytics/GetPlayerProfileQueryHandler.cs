@@ -26,15 +26,23 @@ public class GetPlayerProfileQueryHandler : IRequestHandler<GetPlayerProfileQuer
     {
         var player = await _dbContext.Players
             .Include(p => p.SeasonStats)
+            .Include(p => p.Injuries)
             .FirstOrDefaultAsync(p => p.Id == request.PlayerId, cancellationToken);
 
         if (player == null)
             return null;
 
         var stat = (request.Season.HasValue
-            ? player.SeasonStats.FirstOrDefault(s => s.Season == request.Season.Value)
+            ? player.SeasonStats
+                .Where(s => s.Season == request.Season.Value)
+                .OrderByDescending(s => s.GamesPlayed)
+                .ThenByDescending(s => s.LeagueDifficultyCoefficient)
+                .FirstOrDefault()
             : null)
-            ?? player.SeasonStats.OrderByDescending(s => s.Season).FirstOrDefault();
+            ?? player.SeasonStats
+                .OrderByDescending(s => s.Season)
+                .ThenByDescending(s => s.GamesPlayed)
+                .FirstOrDefault();
 
         if (stat == null)
         {
@@ -50,7 +58,8 @@ public class GetPlayerProfileQueryHandler : IRequestHandler<GetPlayerProfileQuer
                 League = player.League,
                 Nationality = player.Nationality,
                 Season = request.Season ?? DateTime.UtcNow.Year,
-                RadarMetrics = new RadarMetricsDto(50, 50, 50, 50, 50, 50)
+                RadarMetrics = new RadarMetricsDto(50, 50, 50, 50, 50, 50),
+                Injuries = PlayerInjuryDto.MapFrom(player.Injuries)
             };
         }
 
@@ -137,7 +146,8 @@ public class GetPlayerProfileQueryHandler : IRequestHandler<GetPlayerProfileQuer
             ReboundsPer40 = stat.ReboundsPer40,
             EuropeanCompatibilityIndex = eci,
             DefensivePressureIndex = dpi,
-            BuyLowBounceBackIndex = buyLow
+            BuyLowBounceBackIndex = buyLow,
+            Injuries = PlayerInjuryDto.MapFrom(player.Injuries)
         };
 
         _analyticsService.PopulateShotDietAndPhysicality(dto, stat);

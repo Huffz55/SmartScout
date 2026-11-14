@@ -230,6 +230,78 @@ public class PlayersController : ControllerBase
         });
     }
 
+    [HttpPost("sync-injuries")]
+    [ApiKeyAuth]
+    [EnableRateLimiting("SyncPolicy")]
+    public async Task<IActionResult> SyncLiveInjuries(
+        [FromServices] IPlayerInjurySyncService injurySyncService,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await injurySyncService.SyncLiveInjuriesAsync(cancellationToken);
+        return Ok(new
+        {
+            Message = $"Live injury sync completed: {result.MatchedPlayers} matched players ({result.InsertedCount} inserted, {result.UpdatedCount} updated, {result.RecoveredMarkedCount} recovered).",
+            result.TotalFetched,
+            result.MatchedPlayers,
+            result.InsertedCount,
+            result.UpdatedCount,
+            result.RecoveredMarkedCount,
+            result.SourceCounts,
+            result.SampleMatched
+        });
+    }
+
+    [HttpGet("injuries")]
+    public async Task<IActionResult> GetInjuriesSummary(
+        [FromServices] ISmartScoutDbContext dbContext,
+        [FromQuery] bool activeOnly = true,
+        [FromQuery] int top = 100,
+        CancellationToken cancellationToken = default)
+    {
+        int clampedTop = Math.Clamp(top, 1, 500);
+        var query = dbContext.PlayerInjuries
+            .AsNoTracking()
+            .Include(i => i.Player)
+            .AsQueryable();
+
+        if (activeOnly)
+        {
+            query = query.Where(i => i.Status != "Recovered" && i.Status != "Healthy" && i.Status != "Cleared");
+        }
+
+        var items = await query
+            .OrderByDescending(i => i.ReportedAt)
+            .Take(clampedTop)
+            .Select(i => new
+            {
+                i.Id,
+                i.PlayerId,
+                PlayerName = i.Player != null ? i.Player.FullName : "Unknown",
+                League = i.Player != null ? i.Player.League : "-",
+                TeamName = i.Player != null ? i.Player.TeamName : null,
+                i.Season,
+                i.InjuryType,
+                i.Status,
+                i.GamesMissed,
+                i.Source,
+                i.Notes,
+                i.ReportedAt
+            })
+            .ToListAsync(cancellationToken);
+
+        int totalCount = await dbContext.PlayerInjuries.CountAsync(cancellationToken);
+        int activeCount = await dbContext.PlayerInjuries.CountAsync(
+            i => i.Status != "Recovered" && i.Status != "Healthy" && i.Status != "Cleared",
+            cancellationToken);
+
+        return Ok(new
+        {
+            TotalRecords = totalCount,
+            ActiveRecords = activeCount,
+            Items = items
+        });
+    }
+
     [HttpPost("{id:guid}/watchlist")]
     public async Task<IActionResult> ToggleWatchlist(
         Guid id, 

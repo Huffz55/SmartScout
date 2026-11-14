@@ -124,7 +124,7 @@ namespace SmartScout.Infrastructure.Migrations
                         .HasColumnType("character varying(30)");
 
                     b.Property<DateTime>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("timestamp without time zone");
 
                     b.HasKey("Id");
 
@@ -140,14 +140,32 @@ namespace SmartScout.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("AgencyName")
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
                     b.Property<DateTime?>("BirthDate")
-                        .HasColumnType("timestamp with time zone");
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<int?>("ContractExpirySeason")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("DominantHand")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasDefaultValue("Right");
 
                     b.Property<int?>("DraftPick")
                         .HasColumnType("integer");
 
                     b.Property<int?>("DraftYear")
                         .HasColumnType("integer");
+
+                    b.Property<string>("EstimatedMarketValueTier")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
 
                     b.Property<int>("ExternalApiId")
                         .HasColumnType("integer");
@@ -173,6 +191,11 @@ namespace SmartScout.Infrastructure.Migrations
 
                     b.Property<int?>("HeightCm")
                         .HasColumnType("integer");
+
+                    b.Property<bool>("IsWatchlisted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
 
                     b.Property<string>("LastName")
                         .IsRequired()
@@ -203,9 +226,15 @@ namespace SmartScout.Infrastructure.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
+                    b.Property<string>("ScoutNotes")
+                        .HasColumnType("text");
+
                     b.Property<string>("SecondaryPosition")
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
+
+                    b.Property<int?>("StandingReachCm")
+                        .HasColumnType("integer");
 
                     b.Property<string>("TeamName")
                         .HasMaxLength(100)
@@ -241,6 +270,53 @@ namespace SmartScout.Infrastructure.Migrations
                     NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("NormalizedName"), new[] { "gin_trgm_ops" });
 
                     b.ToTable("Players");
+                });
+
+            modelBuilder.Entity("SmartScout.Domain.Entities.PlayerInjury", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("GamesMissed")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
+                    b.Property<string>("InjuryType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(350)
+                        .HasColumnType("character varying(350)");
+
+                    b.Property<Guid>("PlayerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("ReportedAt")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<int>("Season")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Source")
+                        .HasMaxLength(60)
+                        .HasColumnType("character varying(60)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasDefaultValue("Recovered");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PlayerId");
+
+                    b.ToTable("PlayerInjuries", (string)null);
                 });
 
             modelBuilder.Entity("SmartScout.Domain.Entities.PlayerSeasonStat", b =>
@@ -290,6 +366,10 @@ namespace SmartScout.Infrastructure.Migrations
                     b.Property<decimal?>("EffectiveFgPct")
                         .HasPrecision(5, 3)
                         .HasColumnType("numeric(5,3)");
+
+                    b.Property<decimal?>("EuroLeagueTransitionIndex")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("numeric(5,2)");
 
                     b.Property<decimal?>("Fg2Pct")
                         .HasColumnType("numeric");
@@ -406,12 +486,20 @@ namespace SmartScout.Infrastructure.Migrations
                         .HasPrecision(5, 1)
                         .HasColumnType("numeric(5,1)");
 
+                    b.Property<decimal?>("StocksPer36")
+                        .HasPrecision(4, 1)
+                        .HasColumnType("numeric(4,1)");
+
                     b.Property<string>("TeamName")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasDefaultValue("TOT");
+
+                    b.Property<decimal?>("ThreePointRate")
+                        .HasPrecision(4, 3)
+                        .HasColumnType("numeric(4,3)");
 
                     b.Property<decimal?>("ThreePointsAttempted")
                         .HasColumnType("numeric");
@@ -452,6 +540,17 @@ namespace SmartScout.Infrastructure.Migrations
                     b.ToTable("SeasonStats");
                 });
 
+            modelBuilder.Entity("SmartScout.Domain.Entities.PlayerInjury", b =>
+                {
+                    b.HasOne("SmartScout.Domain.Entities.Player", "Player")
+                        .WithMany("Injuries")
+                        .HasForeignKey("PlayerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Player");
+                });
+
             modelBuilder.Entity("SmartScout.Domain.Entities.PlayerSeasonStat", b =>
                 {
                     b.HasOne("SmartScout.Domain.Entities.Player", "Player")
@@ -465,6 +564,8 @@ namespace SmartScout.Infrastructure.Migrations
 
             modelBuilder.Entity("SmartScout.Domain.Entities.Player", b =>
                 {
+                    b.Navigation("Injuries");
+
                     b.Navigation("SeasonStats");
                 });
 #pragma warning restore 612, 618

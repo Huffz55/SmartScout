@@ -70,6 +70,9 @@ public class Player
     private readonly List<PlayerSeasonStat> _seasonStats = new();
     public IReadOnlyCollection<PlayerSeasonStat> SeasonStats => _seasonStats.AsReadOnly();
 
+    private readonly List<PlayerInjury> _injuries = new();
+    public IReadOnlyCollection<PlayerInjury> Injuries => _injuries.AsReadOnly();
+
     // EF Core constructor
     private Player() { }
 
@@ -204,15 +207,33 @@ public class Player
 
         string normalized = raw.Normalize(NormalizationForm.FormD);
         var sb = new StringBuilder(normalized.Length);
+        bool prevSpace = false;
         foreach (char c in normalized)
         {
             var category = CharUnicodeInfo.GetUnicodeCategory(c);
-            if (category != UnicodeCategory.NonSpacingMark)
+            if (category == UnicodeCategory.NonSpacingMark)
+                continue;
+
+            // Strip initials/suffix punctuation (A.J., Jr., L'Etang) and normalize hyphens/slashes to single spaces
+            if (c is '.' or ',' or '\'' or '’' or '"')
+                continue;
+
+            char mapped = c is '-' or '/' ? ' ' : c;
+            if (char.IsWhiteSpace(mapped))
             {
-                sb.Append(c);
+                if (!prevSpace && sb.Length > 0)
+                {
+                    sb.Append(' ');
+                    prevSpace = true;
+                }
+            }
+            else
+            {
+                sb.Append(mapped);
+                prevSpace = false;
             }
         }
-        return sb.ToString().Normalize(NormalizationForm.FormC).ToLowerInvariant();
+        return sb.ToString().TrimEnd().Normalize(NormalizationForm.FormC).ToLowerInvariant();
     }
 
     private static (string? Primary, string? Secondary) ParsePositions(string? position)

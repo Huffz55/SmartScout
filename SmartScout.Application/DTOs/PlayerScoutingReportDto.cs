@@ -22,6 +22,38 @@ public class CareerSeasonStintDto
     public decimal LeagueDifficultyCoefficient { get; set; } = 1.00m;
 }
 
+public class PlayerInjuryDto
+{
+    public int Season { get; set; }
+    public string InjuryType { get; set; } = string.Empty;
+    public int GamesMissed { get; set; }
+    public string Status { get; set; } = string.Empty;
+    public DateTime ReportedAt { get; set; }
+    public string? Source { get; set; }
+    public string? Notes { get; set; }
+    public bool IsActive { get; set; }
+
+    public static List<PlayerInjuryDto> MapFrom(IEnumerable<SmartScout.Domain.Entities.PlayerInjury>? injuries)
+    {
+        if (injuries == null) return new List<PlayerInjuryDto>();
+        return injuries
+            .OrderByDescending(i => i.IsActive)
+            .ThenByDescending(i => i.ReportedAt)
+            .Select(i => new PlayerInjuryDto
+            {
+                Season = i.Season,
+                InjuryType = i.InjuryType,
+                GamesMissed = i.GamesMissed,
+                Status = i.Status,
+                ReportedAt = i.ReportedAt,
+                Source = i.Source,
+                Notes = i.Notes,
+                IsActive = i.IsActive
+            })
+            .ToList();
+    }
+}
+
 public class PlayerScoutingReportDto
 {
     public Guid PlayerId { get; set; }
@@ -70,6 +102,9 @@ public class PlayerScoutingReportDto
 
     // Multi-Season Career Trajectory
     public List<CareerSeasonStintDto> CareerHistory { get; set; } = new();
+
+    // Verified Medical & Injury Log
+    public List<PlayerInjuryDto> Injuries { get; set; } = new();
 
     // Per-game core stats
     public int GamesPlayed { get; set; }

@@ -17,6 +17,7 @@ public class SmartScoutDbContext : DbContext, ISmartScoutDbContext
 
     public DbSet<Player> Players { get; set; }
     public DbSet<PlayerSeasonStat> SeasonStats { get; set; }
+    public DbSet<PlayerInjury> PlayerInjuries { get; set; }
     public DbSet<BasketballLeague> Leagues { get; set; }
     public DbSet<BasketballSeason> Seasons { get; set; }
     public DbSet<IngestionJobLog> IngestionJobLogs { get; set; }
@@ -141,6 +142,23 @@ public class SmartScoutDbContext : DbContext, ISmartScoutDbContext
                 .WithOne(e => e.Player)
                 .HasForeignKey(e => e.PlayerId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            entity.HasMany(e => e.Injuries)
+                .WithOne(e => e.Player)
+                .HasForeignKey(e => e.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PlayerInjury>(entity =>
+        {
+            entity.ToTable("PlayerInjuries");
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.PlayerId);
+            entity.Property(e => e.InjuryType).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.Status).HasMaxLength(50).HasDefaultValue("Recovered");
+            entity.Property(e => e.GamesMissed).HasDefaultValue(0);
+            entity.Property(e => e.Source).HasMaxLength(60);
+            entity.Property(e => e.Notes).HasMaxLength(350);
         });
         
         modelBuilder.Entity<PlayerSeasonStat>(entity =>

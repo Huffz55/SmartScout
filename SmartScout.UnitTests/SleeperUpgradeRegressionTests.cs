@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using SmartScout.Application.DTOs;
 using SmartScout.Application.Services;
 using SmartScout.Domain.Entities;
 using SmartScout.Domain.Services;
@@ -237,5 +238,66 @@ public class SleeperUpgradeRegressionTests
         Assert.Equal(2, results.Count);
         Assert.Equal("Euro Wing", results[0].FullName);
         Assert.True(results[0].SleeperScore > results[1].SleeperScore);
+    }
+
+    [Fact]
+    public void Player_NormalizeName_ShouldUnifyPunctuationAndHyphensAcrossScrapers()
+    {
+        Assert.Equal("hugo yimga moukouri", Player.NormalizeName("Hugo", "Yimga-Moukouri"));
+        Assert.Equal("hugo yimga moukouri", Player.NormalizeName("Hugo Yimga Moukouri", ""));
+        Assert.Equal("derrick alston jr", Player.NormalizeName("Derrick", "Alston, Jr."));
+        Assert.Equal("derrick alston jr", Player.NormalizeName("Derrick", "Alston Jr"));
+        Assert.Equal("aj dybantsa", Player.NormalizeName("A.J.", "Dybantsa"));
+        Assert.Equal("aj dybantsa", Player.NormalizeName("AJ", "Dybantsa"));
+        Assert.Equal("amael letang", Player.NormalizeName("Amael", "L'Etang"));
+    }
+
+    [Fact]
+    public void PlayerInjury_NormalizeStatusAndRecovery_TransitionsCleanly()
+    {
+        var pid = Guid.NewGuid();
+        var injury = new PlayerInjury(pid, 2027, "Knee", "Out - Expected to miss 2 weeks", DateTime.UtcNow, 3, "ESPN NBA", "Left knee soreness");
+
+        Assert.True(injury.IsActive);
+        Assert.Equal("Out", injury.Status);
+        Assert.Equal(3, injury.GamesMissed);
+
+        injury.MarkRecovered(DateTime.UtcNow, "ESPN NBA");
+        Assert.False(injury.IsActive);
+        Assert.Equal("Recovered", injury.Status);
+    }
+
+    [Fact]
+    public void GenerateReportPdf_WithActiveInjury_ShouldRenderValidPdfBytes()
+    {
+        var generator = new SmartScout.Infrastructure.Services.Reporting.QuestPdfScoutingReportGenerator();
+        var dto = new PlayerScoutingReportDto
+        {
+            PlayerId = Guid.NewGuid(),
+            FirstName = "Test",
+            LastName = "Prospect",
+            League = "EuroLeague",
+            Season = 2027,
+            Archetype = "Sharpshooter",
+            RadarMetrics = new RadarMetricsDto(75, 85, 65, 55, 60, 72),
+            TacticalVerdict = "High-level perimeter threat.",
+            Injuries = new List<PlayerInjuryDto>
+            {
+                new()
+                {
+                    Season = 2027,
+                    InjuryType = "Ankle",
+                    Status = "Day-To-Day",
+                    ReportedAt = DateTime.UtcNow,
+                    Source = "Rotowire EuroLeague",
+                    Notes = "Mild left ankle sprain",
+                    IsActive = true
+                }
+            }
+        };
+
+        var bytes = generator.GenerateReportPdf(dto);
+        Assert.True(bytes.Length > 1000);
+        Assert.Equal("%PDF-", System.Text.Encoding.ASCII.GetString(bytes, 0, 5));
     }
 }

@@ -32,12 +32,21 @@ public class GetPlayerScoutingReportQueryHandler : IRequestHandler<GetPlayerScou
         var stat = await _dbContext.SeasonStats
             .Include(s => s.Player)
                 .ThenInclude(p => p!.SeasonStats)
-            .FirstOrDefaultAsync(s => s.PlayerId == request.PlayerId && s.Season == request.Season, cancellationToken)
+            .Include(s => s.Player)
+                .ThenInclude(p => p!.Injuries)
+            .Where(s => s.PlayerId == request.PlayerId && s.Season == request.Season)
+            .OrderByDescending(s => s.GamesPlayed)
+            .ThenByDescending(s => s.LeagueDifficultyCoefficient)
+            .FirstOrDefaultAsync(cancellationToken)
             ?? await _dbContext.SeasonStats
                 .Include(s => s.Player)
                     .ThenInclude(p => p!.SeasonStats)
+                .Include(s => s.Player)
+                    .ThenInclude(p => p!.Injuries)
+                .Where(s => s.PlayerId == request.PlayerId)
                 .OrderByDescending(s => s.Season)
-                .FirstOrDefaultAsync(s => s.PlayerId == request.PlayerId, cancellationToken);
+                .ThenByDescending(s => s.GamesPlayed)
+                .FirstOrDefaultAsync(cancellationToken);
 
         if (stat == null || stat.Player == null)
         {
@@ -132,7 +141,8 @@ public class GetPlayerScoutingReportQueryHandler : IRequestHandler<GetPlayerScou
             EuropeanCompatibilityIndex = eci,
             DefensivePressureIndex = dpi,
             BuyLowBounceBackIndex = buyLow,
-            TacticalVerdict = verdict
+            TacticalVerdict = verdict,
+            Injuries = PlayerInjuryDto.MapFrom(player.Injuries)
         };
 
         _analyticsService.PopulateShotDietAndPhysicality(reportDto, stat);

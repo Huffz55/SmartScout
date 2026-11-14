@@ -132,12 +132,22 @@ public class SleeperScoutingService : ISleeperScoutingService
 
             decimal sanitizedTs = GetSanitizedTs(latestStat.TrueShootingPct);
             decimal scoringTs = Math.Min(0.720m, sanitizedTs);
+            decimal singleFg3m = latestStat.ThreePointsMade ?? ((latestStat.ThreePointsAttempted ?? 0m) * (latestStat.Fg3Pct ?? 0m));
+            decimal singleFg3a = latestStat.ThreePointsAttempted ?? 0m;
+            decimal singleFg3Pct = latestStat.Fg3Pct ?? (singleFg3a > 0 ? singleFg3m / singleFg3a : 0m);
+            var (boundedSingleTs, singleTsContribution, singleShootingBonus) = CalculateBalancedTsAndShooting(
+                sanitizedTs, singleFg3m, singleFg3a, singleFg3Pct, tsMultiplier: 0.65);
+
             bool isEstablishedRegular = IsEstablishedTopTierRegular(latestStat, dedupedCareer);
 
             // Sample-size Bayesian confidence penalty for small-sample cameos in completed seasons or Showcase splits
             double samplePenalty = isMatureSeason && latestStat.GamesPlayed < 16
                 ? (16 - latestStat.GamesPlayed) * 0.85
                 : (maxLeagueGp >= 12 && latestStat.GamesPlayed < 12 ? (12 - latestStat.GamesPlayed) * 0.65 : 0.0);
+            // Early-season live damper (e.g., 2027 at 6-11 GP): prevent < 8 PPG 7-GP cameos from beating full producers
+            double earlyCameoDamper = (!isMatureSeason && latestStat.GamesPlayed < 10 && (latestStat.Points ?? 0m) < 8.0m)
+                ? (8.0 - (double)(latestStat.Points ?? 0m)) * 0.55
+                : 0.0;
             double unknownAgePenalty = !age.HasValue
                 ? (distinctSeasons >= 3 ? 3.0 : 1.0)
                 : 0.0;
@@ -174,8 +184,10 @@ public class SleeperScoutingService : ISleeperScoutingService
                             double rawScore = 62.5
                                 + (double)peakImpact * 1.45
                                 + (double)currentPer36Pts * 0.45
-                                + (double)Math.Max(0m, (scoringTs - 0.54m) * 100m) * 0.35
+                                + (double)Math.Max(0m, (boundedSingleTs - 0.54m) * 100m) * 0.35
+                                + singleShootingBonus * 0.45
                                 - samplePenalty * 0.5
+                                - earlyCameoDamper
                                 - unknownAgePenalty;
 
                             if (age.HasValue)
@@ -222,11 +234,13 @@ public class SleeperScoutingService : ISleeperScoutingService
                 {
                     double rawScore = 54.5
                         + (double)Math.Max(0m, pts36 * paceMult - 13m) * 1.25
-                        + Math.Min(7.0, (double)Math.Max(0m, reb36 * paceMult - 5m) * 0.85)
-                        + (double)Math.Max(0m, ast36 * paceMult - 3.5m) * 1.15
-                        + (double)Math.Max(0m, (scoringTs - 0.54m) * 100m) * 0.75
-                        + (double)latestStat.LeagueDifficultyCoefficient * 10.0
+                        + Math.Min(5.5, (double)Math.Max(0m, reb36 * paceMult - 5m) * 0.70)
+                        + (double)Math.Max(0m, ast36 * paceMult - 3.5m) * 1.20
+                        + singleTsContribution
+                        + singleShootingBonus
+                        + (double)latestStat.LeagueDifficultyCoefficient * 8.0
                         - samplePenalty
+                        - earlyCameoDamper
                         - unknownAgePenalty;
 
                     if (age.HasValue)
@@ -312,12 +326,13 @@ public class SleeperScoutingService : ISleeperScoutingService
 
                     double rawScore = 51.0
                         + (double)paceAdjustedImpact * 1.95
-                        + (double)(Math.Min(0.70m, scoringTs) * 14.0m)
-                        + (hasTransferableShooting ? (double)Math.Min(2.8m, fg3a * 0.55m) : 0.0)
+                        + (double)(boundedSingleTs * 14.0m)
+                        + (hasTransferableShooting ? (double)Math.Min(3.2m, fg3a * 0.60m) : 0.0)
                         + (hasTransferableDefense ? 1.5 : 0.0)
                         + (hasTransferablePlaymaking ? 1.8 : 0.0)
                         + yoyProgressionBonus
                         - samplePenalty
+                        - earlyCameoDamper
                         - unknownAgePenalty;
 
                     if (age.HasValue)
@@ -481,14 +496,8 @@ public class SleeperScoutingService : ISleeperScoutingService
                 .Where(s => string.Equals(s.League, "NBA", StringComparison.OrdinalIgnoreCase))
                 .Sum(s => s.GamesPlayed) / totalGP;
 
-            // Curb interior rim-runner TS% inflation (>62.5%) vs scalable perimeter shot-makers and reward 3P spacing
-            decimal effectiveTsCap = (career3pm >= 1.0m || career3pa >= 3.0m) ? 0.660m : 0.625m;
-            decimal boundedTs = Math.Min(effectiveTsCap, careerTs);
-            double tsContribution = (double)Math.Max(0m, (boundedTs - 0.52m) * 100m) * 0.58;
-
-            double shootingBonus = (career3pa >= 1.5m && career3pPct >= 0.340m)
-                ? Math.Min(3.6, (double)(career3pPct - 0.330m) * 28.0 + Math.Min(1.5, (double)career3pm * 0.65))
-                : 0.0;
+            var (_, tsContribution, shootingBonus) = CalculateBalancedTsAndShooting(
+                careerTs, career3pm, career3pa, career3pPct, tsMultiplier: 0.58);
 
             double rawScore = 51.0
                 + (double)Math.Max(0m, careerPts36 * careerPaceMult - 12m) * 1.25
@@ -658,6 +667,19 @@ public class SleeperScoutingService : ISleeperScoutingService
 
         // Proven multi-year NBA/EL fixture (~14.5+ MPG over 135+ top-tier games) is already discovered
         return totalTopTierGp >= 135 && weightedTopTierMpg >= 14.5m;
+    }
+
+    private static (decimal BoundedTs, double TsContribution, double ShootingBonus) CalculateBalancedTsAndShooting(
+        decimal ts, decimal fg3m, decimal fg3a, decimal fg3Pct, double tsMultiplier)
+    {
+        // Differentiate sustainable perimeter shot-making ceiling from pure rim-running dunk/putback TS%
+        decimal effectiveTsCap = (fg3m >= 1.0m || fg3a >= 3.0m) ? 0.660m : 0.625m;
+        decimal boundedTs = Math.Min(effectiveTsCap, ts);
+        double tsContribution = (double)Math.Max(0m, (boundedTs - 0.52m) * 100m) * tsMultiplier;
+        double shootingBonus = (fg3a >= 1.5m && fg3Pct >= 0.340m)
+            ? Math.Min(3.6, (double)(fg3Pct - 0.330m) * 28.0 + Math.Min(1.5, (double)fg3m * 0.65))
+            : 0.0;
+        return (boundedTs, tsContribution, shootingBonus);
     }
 
     private static decimal CalculateTotalMinutes(IEnumerable<PlayerSeasonStat> stats)

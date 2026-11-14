@@ -87,12 +87,19 @@ public static class InfrastructureServiceRegistration
         // Reporting
         services.AddScoped<IScoutingReportGenerator, SmartScout.Infrastructure.Services.Reporting.QuestPdfScoutingReportGenerator>();
 
-        // Player Bio & Physicals Enrichment Service (Wikipedia / Wikidata)
+        // Player Bio & Physicals Enrichment Service (Wikipedia / Wikidata / EuroLeague / BRef)
         services.AddHttpClient<IPlayerBioEnrichmentService, WikipediaBioEnrichmentService>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(25);
             client.DefaultRequestHeaders.Add("User-Agent", "SmartScoutAnalytics/1.0 (contact@smartscout.io; automated scouting bot)");
             client.DefaultRequestHeaders.Add("Accept", "application/json");
+        });
+
+        // Live Player Injury Sync Service (ESPN, Basketball-Reference, Rotowire, CBS)
+        services.AddHttpClient<IPlayerInjurySyncService, PlayerInjurySyncService>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(25);
+            client.DefaultRequestHeaders.Add("Accept", "application/json, text/html");
         });
 
         return services;

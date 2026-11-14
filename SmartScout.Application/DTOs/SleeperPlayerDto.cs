@@ -55,5 +55,7 @@ public class SleeperPlayerDto
 
     // Context & Scouting Insights
     public string? PeakSeasonContext { get; set; }
+    public string? ActiveInjuryStatus { get; set; }
+    public string? ActiveInjuryDetail { get; set; }
     public List<string> ScoutingReasons { get; set; } = new();
 }

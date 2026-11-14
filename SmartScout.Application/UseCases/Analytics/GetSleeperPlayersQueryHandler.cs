@@ -54,6 +54,33 @@ public class GetSleeperPlayersQueryHandler : IRequestHandler<GetSleeperPlayersQu
             sleepers = sleepers.Where(s => !string.IsNullOrWhiteSpace(s.Position) && s.Position.ToUpperInvariant().Contains(posKey)).ToList();
         }
 
-        return sleepers.Take(request.Top).ToList();
+        var finalSleepers = sleepers.Take(request.Top).ToList();
+        if (finalSleepers.Count > 0)
+        {
+            var targetIds = finalSleepers.Select(s => s.PlayerId).Distinct().ToList();
+            var activeInjuries = await _dbContext.PlayerInjuries
+                .AsNoTracking()
+                .Where(i => targetIds.Contains(i.PlayerId) &&
+                            i.Status != "Recovered" &&
+                            i.Status != "Healthy" &&
+                            i.Status != "Cleared")
+                .OrderByDescending(i => i.ReportedAt)
+                .ToListAsync(cancellationToken);
+
+            var injuryByPlayer = activeInjuries
+                .GroupBy(i => i.PlayerId)
+                .ToDictionary(g => g.Key, g => g.First());
+
+            foreach (var sleeper in finalSleepers)
+            {
+                if (injuryByPlayer.TryGetValue(sleeper.PlayerId, out var inj))
+                {
+                    sleeper.ActiveInjuryStatus = inj.Status;
+                    sleeper.ActiveInjuryDetail = inj.InjuryType;
+                }
+            }
+        }
+
+        return finalSleepers;
     }
 }
