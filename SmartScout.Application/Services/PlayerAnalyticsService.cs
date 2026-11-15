@@ -4,6 +4,7 @@ using SmartScout.Domain.Entities;
 using SmartScout.Domain.Enums;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 
 namespace SmartScout.Application.Services;
@@ -193,6 +194,10 @@ public class PlayerAnalyticsService : IPlayerAnalyticsService
         decimal? ast36 = stat.AstPer36 ?? (min > 0 && stat.Assists.HasValue ? Math.Round((stat.Assists.Value / min) * 36m, 1) : null);
         decimal? reb36 = stat.RebPer36 ?? (min > 0 && stat.Rebounds.HasValue ? Math.Round((stat.Rebounds.Value / min) * 36m, 1) : null);
         decimal? stocks36 = stat.StocksPer36 ?? (min > 0 ? Math.Round((((stat.Steals ?? 0m) + (stat.Blocks ?? 0m)) / min) * 36m, 2) : null);
+        double eci = CalculateEuropeanCompatibilityIndex(stat);
+        double dpi = CalculateDefensivePressureIndex(stat);
+        var percentiles = CalculatePositionalPercentiles(stat, player.Position);
+        var (strengths, weaknesses) = AnalyzeStrengthsAndWeaknesses(stat, player, percentiles, eci, dpi);
 
         return new PlayerComparisonProfileDto
         {
@@ -223,8 +228,8 @@ public class PlayerAnalyticsService : IPlayerAnalyticsService
             PointsPer40 = stat.PointsPer40,
             Nationality = player.Nationality,
             League = !string.IsNullOrWhiteSpace(stat.League) ? stat.League : player.League,
-            EuropeanCompatibilityIndex = CalculateEuropeanCompatibilityIndex(stat),
-            DefensivePressureIndex = CalculateDefensivePressureIndex(stat),
+            EuropeanCompatibilityIndex = eci,
+            DefensivePressureIndex = dpi,
             BuyLowBounceBackIndex = CalculateBuyLowBounceBackIndex(stat, player.SeasonStats),
             Age = player.CurrentAge,
             HeightCm = player.HeightCm,
@@ -240,7 +245,9 @@ public class PlayerAnalyticsService : IPlayerAnalyticsService
             ThreePointRate = stat.ThreePointRate,
             AssistToTurnoverRatio = stat.AssistToTurnoverRatio,
             EuroLeagueTransitionIndex = stat.EuroLeagueTransitionIndex,
-            Percentiles = CalculatePositionalPercentiles(stat, player.Position),
+            Percentiles = percentiles,
+            Strengths = strengths,
+            Weaknesses = weaknesses,
             RadarMetrics = CalculateRadarMetrics(stat)
         };
     }
@@ -494,6 +501,367 @@ public class PlayerAnalyticsService : IPlayerAnalyticsService
 
         double finalScore = Math.Max(multiSeasonBounceBackScore, underutilizedGemScore);
         return Math.Round(Clamp100(finalScore), 1);
+    }
+
+    public (List<ScoutingTraitDto> Strengths, List<ScoutingTraitDto> Weaknesses) AnalyzeStrengthsAndWeaknesses(
+        PlayerSeasonStat stat,
+        Player? player = null,
+        Dictionary<string, int>? percentiles = null,
+        double? eci = null,
+        double? dpi = null)
+    {
+        var pcts = percentiles ?? CalculatePositionalPercentiles(stat, player?.Position);
+        double resolvedEci = eci ?? CalculateEuropeanCompatibilityIndex(stat);
+        double resolvedDpi = dpi ?? CalculateDefensivePressureIndex(stat);
+
+        string pos = (player?.Position ?? player?.PrimaryPosition ?? "G").ToUpperInvariant();
+        bool isCenter = pos.Contains('C');
+        bool isBig = isCenter || pos.Contains("PF") || pos == "F-C" || pos == "C-F";
+        bool isPureGuard = pos.Contains("PG") || pos == "G";
+
+        decimal mpg = stat.Minutes ?? 0m;
+        decimal pts36 = stat.PtsPer36 ?? (mpg > 0 && stat.Points.HasValue ? Math.Round((stat.Points.Value / mpg) * 36m, 1) : 0m);
+        decimal ast36 = stat.AstPer36 ?? (mpg > 0 && stat.Assists.HasValue ? Math.Round((stat.Assists.Value / mpg) * 36m, 1) : 0m);
+        decimal reb36 = stat.RebPer36 ?? (mpg > 0 && stat.Rebounds.HasValue ? Math.Round((stat.Rebounds.Value / mpg) * 36m, 1) : 0m);
+        decimal stocks36 = stat.StocksPer36 ?? (mpg > 0 ? Math.Round((((stat.Steals ?? 0m) + (stat.Blocks ?? 0m)) / mpg) * 36m, 2) : 0m);
+        decimal astTov = stat.AssistToTurnoverRatio ?? ((stat.Turnovers ?? 0m) > 0 ? Math.Round((stat.Assists ?? 0m) / stat.Turnovers!.Value, 2) : (stat.Assists ?? 0m));
+
+        int GetPct(string key) => pcts.TryGetValue(key, out int p) ? p : 50;
+        static string Fmt(decimal v, string fmt) => v.ToString(fmt, CultureInfo.InvariantCulture);
+        static string FmtD(double v, string fmt) => v.ToString(fmt, CultureInfo.InvariantCulture);
+
+        var strengths = new List<(int Score, ScoutingTraitDto Trait)>();
+        var weaknesses = new List<(int Score, ScoutingTraitDto Trait)>();
+
+        // 1. Active Medical / Injury Availability Check
+        var activeInjury = player?.Injuries?.FirstOrDefault(i => i.IsActive);
+        if (activeInjury != null)
+        {
+            weaknesses.Add((98, new ScoutingTraitDto
+            {
+                Title = "Active Injury Flag",
+                MetricBadge = $"{activeInjury.Status}: {activeInjury.InjuryType}",
+                Detail = $"Reported {activeInjury.ReportedAt:yyyy-MM-dd}{(string.IsNullOrWhiteSpace(activeInjury.Source) ? "" : $" ({activeInjury.Source})")} — verify medical clearance before signing.",
+                Category = "Medical"
+            }));
+        }
+
+        // 2. Sample Reliability / Minute Load
+        if (stat.GamesPlayed < 10 || mpg < 10.0m)
+        {
+            weaknesses.Add((88, new ScoutingTraitDto
+            {
+                Title = "Small Sample / Limited Role",
+                MetricBadge = $"{stat.GamesPlayed} GP • {Fmt(mpg, "F1")} MPG",
+                Detail = $"Low sample load ({Fmt(mpg, "F1")} MPG over {stat.GamesPlayed} GP) can inflate per-36 rates and warrants deeper film verification.",
+                Category = "Sample"
+            }));
+        }
+
+        // 3. Perimeter Shooting & Floor Spacing
+        decimal tpr = stat.ThreePointRate ?? 0m;
+        decimal fg3a = stat.ThreePointsAttempted ?? 0m;
+        if (stat.Fg3Pct.HasValue && stat.Fg3Pct.Value >= 0.370m && (tpr >= 0.24m || fg3a >= 1.8m))
+        {
+            bool elite = stat.Fg3Pct.Value >= 0.400m && (tpr >= 0.34m || fg3a >= 3.2m);
+            strengths.Add((elite ? 92 : 80, new ScoutingTraitDto
+            {
+                Title = elite ? "Elite Floor-Spacing Threat" : "Reliable Perimeter Catch-and-Shoot",
+                MetricBadge = $"{Fmt(stat.Fg3Pct.Value * 100m, "F1")}% 3P • {GetPct("Fg3Pct")}th %ile",
+                Detail = isBig
+                    ? "Stretches packed FIBA paints from the frontcourt and opens driving lanes for guards."
+                    : "Punishes closeouts and sustains perimeter gravity in half-court offense.",
+                Category = "Shooting"
+            }));
+        }
+        else if (!isCenter && stat.Fg3Pct.HasValue && stat.Fg3Pct.Value <= 0.305m && (tpr >= 0.20m || fg3a >= 1.5m))
+        {
+            weaknesses.Add((78, new ScoutingTraitDto
+            {
+                Title = "Streaky / Below-Average 3P Shooting",
+                MetricBadge = $"{Fmt(stat.Fg3Pct.Value * 100m, "F1")}% 3P • {GetPct("Fg3Pct")}th %ile",
+                Detail = "Sub-31% perimeter conversion invites defenders to go under ball screens and pack the lane.",
+                Category = "Shooting"
+            }));
+        }
+        else if (!isCenter && tpr > 0m && tpr < 0.16m && fg3a < 1.0m && mpg >= 12m)
+        {
+            weaknesses.Add((72, new ScoutingTraitDto
+            {
+                Title = "Non-Shooter Perimeter Profile",
+                MetricBadge = $"{Fmt(tpr * 100m, "F0")}% 3P Rate",
+                Detail = "Minimal three-point volume compresses spacing unless surrounded by four shooters.",
+                Category = "Shooting"
+            }));
+        }
+
+        // 4. Scoring Efficiency (TS%)
+        if (stat.TrueShootingPct.HasValue && stat.TrueShootingPct.Value >= 0.590m && mpg >= 10m)
+        {
+            int pctTs = GetPct("TrueShootingPct");
+            strengths.Add((pctTs >= 85 ? 88 : 76, new ScoutingTraitDto
+            {
+                Title = "High-Efficiency Shot Conversion",
+                MetricBadge = $"{Fmt(stat.TrueShootingPct.Value * 100m, "F1")}% TS • {pctTs}th %ile",
+                Detail = "Scores with minimal wasted possessions through efficient rim finishing or clean shot selection.",
+                Category = "Efficiency"
+            }));
+        }
+        else if (stat.TrueShootingPct.HasValue && stat.TrueShootingPct.Value <= 0.505m)
+        {
+            weaknesses.Add((76, new ScoutingTraitDto
+            {
+                Title = "Below-Average Scoring Efficiency",
+                MetricBadge = $"{Fmt(stat.TrueShootingPct.Value * 100m, "F1")}% TS • {GetPct("TrueShootingPct")}th %ile",
+                Detail = "True shooting sits below functional contender thresholds; shot diet or finishing needs tightening.",
+                Category = "Efficiency"
+            }));
+        }
+
+        // 5. Scoring Volume (PTS/36)
+        int pctPts36 = GetPct("PtsPer36");
+        if (pts36 >= 18.0m && mpg >= 10m && pctPts36 >= 65)
+        {
+            strengths.Add((pctPts36 >= 82 ? 86 : 74, new ScoutingTraitDto
+            {
+                Title = "Prolific Per-Minute Scorer",
+                MetricBadge = $"{Fmt(pts36, "F1")} PTS/36 • {pctPts36}th %ile",
+                Detail = $"Produces {Fmt(pts36, "F1")} points per 36 minutes, projecting immediate punch in expanded usage.",
+                Category = "Scoring"
+            }));
+        }
+        else if (pts36 > 0m && pts36 <= 11.5m && mpg >= 12m)
+        {
+            weaknesses.Add((66, new ScoutingTraitDto
+            {
+                Title = "Low-Volume Scoring Output",
+                MetricBadge = $"{Fmt(pts36, "F1")} PTS/36 • {pctPts36}th %ile",
+                Detail = "Modest per-minute scoring output indicates a complementary rather than primary offensive threat.",
+                Category = "Scoring"
+            }));
+        }
+
+        // 6. Playmaking & Ball Security
+        int pctAst36 = GetPct("AstPer36");
+        if ((pctAst36 >= 75 || ast36 >= 5.5m) && astTov >= 1.55m && mpg >= 10m)
+        {
+            strengths.Add((84, new ScoutingTraitDto
+            {
+                Title = isBig ? "High-Post / Short-Roll Playmaker" : "Primary Pick-and-Roll Creator",
+                MetricBadge = $"{Fmt(ast36, "F1")} AST/36 • {Fmt(astTov, "F2")} A/TO",
+                Detail = "Creates advantages for teammates while maintaining disciplined decision-making.",
+                Category = "Playmaking"
+            }));
+        }
+        else if (astTov >= 2.25m && (stat.Turnovers ?? 2m) <= 1.8m && (stat.Assists ?? 0m) >= 1.5m)
+        {
+            strengths.Add((73, new ScoutingTraitDto
+            {
+                Title = "Low-Mistake Ball Security",
+                MetricBadge = $"{Fmt(astTov, "F2")} A/TO • {Fmt(stat.Turnovers ?? 0m, "F1")} TOV/G",
+                Detail = "Protects possessions cleanly against pressure — valuable in slower-tempo European basketball.",
+                Category = "Playmaking"
+            }));
+        }
+
+        if (((stat.Turnovers ?? 0m) >= 2.6m && astTov <= 1.65m) || (astTov <= 1.10m && (stat.Assists ?? 0m) >= 1.4m))
+        {
+            weaknesses.Add((74, new ScoutingTraitDto
+            {
+                Title = "Turnover Risk Under Pressure",
+                MetricBadge = $"{Fmt(stat.Turnovers ?? 0m, "F1")} TOV/G • {Fmt(astTov, "F2")} A/TO",
+                Detail = "Tight assist-to-turnover margin creates half-court risk against aggressive trapping defenses.",
+                Category = "Playmaking"
+            }));
+        }
+        else if (isPureGuard && ast36 <= 3.0m && mpg >= 12m)
+        {
+            weaknesses.Add((68, new ScoutingTraitDto
+            {
+                Title = "Limited Creation for Position",
+                MetricBadge = $"{Fmt(ast36, "F1")} AST/36 • {pctAst36}th %ile",
+                Detail = "Operates mainly off-ball; pairs best alongside a dedicated primary ball-handler.",
+                Category = "Playmaking"
+            }));
+        }
+
+        // 7. Defensive Disruption
+        int pctStocks = GetPct("StocksPer36");
+        if ((pctStocks >= 74 || resolvedDpi >= 68.0) && mpg >= 10m)
+        {
+            strengths.Add((pctStocks >= 85 || resolvedDpi >= 75.0 ? 85 : 75, new ScoutingTraitDto
+            {
+                Title = isBig ? "Rim Deterrence & Defensive Motor" : "Disruptive Ball-Pressure Defense",
+                MetricBadge = $"{Fmt(stocks36, "F1")} Stocks/36 • DPI %{FmtD(resolvedDpi, "F0")}",
+                Detail = "Forces deflections, steals, or rim contests consistently; translates cleanly to high-pressure schemes.",
+                Category = "Defense"
+            }));
+        }
+        else if (pctStocks <= 28 && resolvedDpi <= 42.0 && mpg >= 12m)
+        {
+            weaknesses.Add((70, new ScoutingTraitDto
+            {
+                Title = "Low Defensive Event Creation",
+                MetricBadge = $"{Fmt(stocks36, "F1")} Stocks/36 • DPI %{FmtD(resolvedDpi, "F0")}",
+                Detail = "Generates few steals or blocks; defensive value depends on scheme structure and team help.",
+                Category = "Defense"
+            }));
+        }
+
+        // 8. Rebounding
+        int pctReb = GetPct("RebPer36");
+        if (pctReb >= 76 && mpg >= 10m)
+        {
+            strengths.Add((72, new ScoutingTraitDto
+            {
+                Title = isBig ? "Dominant Interior Glass Presence" : "Plus Positional Rebounding",
+                MetricBadge = $"{Fmt(reb36, "F1")} REB/36 • {pctReb}th %ile",
+                Detail = "Secures defensive rebounds cleanly and extends possessions on the offensive glass.",
+                Category = "Rebounding"
+            }));
+        }
+        else if (isBig && pctReb <= 34 && mpg >= 12m)
+        {
+            weaknesses.Add((71, new ScoutingTraitDto
+            {
+                Title = "Below-Average Frontcourt Rebounding",
+                MetricBadge = $"{Fmt(reb36, "F1")} REB/36 • {pctReb}th %ile",
+                Detail = "Modest rebounding output for size requires collective gang-rebounding support.",
+                Category = "Rebounding"
+            }));
+        }
+
+        // 9. Free Throw & Rim Pressure + FIBA Foul Discipline
+        decimal fga = (stat.TwoPointsAttempted ?? 0m) + (stat.ThreePointsAttempted ?? 0m);
+        decimal fta = stat.FreeThrowsAttempted ?? 0m;
+        decimal ftr = fga > 0 && fta > 0 ? fta / fga : 0m;
+        if (stat.FtPct.HasValue && stat.FtPct.Value >= 0.81m && (ftr >= 0.25m || (stat.FoulsDrawn ?? 0m) >= 3.0m))
+        {
+            strengths.Add((74, new ScoutingTraitDto
+            {
+                Title = "Clutch Foul-Line Converter",
+                MetricBadge = $"{Fmt(stat.FtPct.Value * 100m, "F1")}% FT{(ftr > 0 ? $" • {Fmt(ftr * 100m, "F0")}% FTr" : "")}",
+                Detail = "Absorbs contact around the rim and cashes in reliably at the stripe late in close games.",
+                Category = "Physicality"
+            }));
+        }
+        else if (stat.FtPct.HasValue && stat.FtPct.Value <= 0.66m)
+        {
+            weaknesses.Add((69, new ScoutingTraitDto
+            {
+                Title = "Free-Throw Liability",
+                MetricBadge = $"{Fmt(stat.FtPct.Value * 100m, "F1")}% FT",
+                Detail = "Low foul-line conversion makes him a late-game intentional-foul target in tight fourth quarters.",
+                Category = "Physicality"
+            }));
+        }
+        else if (!isBig && fga >= 4.0m && ftr > 0m && ftr <= 0.16m)
+        {
+            weaknesses.Add((63, new ScoutingTraitDto
+            {
+                Title = "Low Rim / Foul-Line Pressure",
+                MetricBadge = $"{Fmt(ftr * 100m, "F1")}% FTr",
+                Detail = "Jump-shot heavy diet rarely draws shooting fouls or puts opposing teams into the bonus.",
+                Category = "Physicality"
+            }));
+        }
+
+        decimal? pf36 = mpg > 0 && stat.PersonalFoulsCommitted.HasValue
+            ? Math.Round((stat.PersonalFoulsCommitted.Value / mpg) * 36m, 1)
+            : null;
+        if (pf36.HasValue && pf36.Value >= 3.9m)
+        {
+            weaknesses.Add((75, new ScoutingTraitDto
+            {
+                Title = "FIBA Foul-Trouble Risk",
+                MetricBadge = $"{Fmt(pf36.Value, "F1")} PF/36",
+                Detail = "Elevated foul rate risks early benching under FIBA's stricter 5-foul limit.",
+                Category = "Discipline"
+            }));
+        }
+        else if (pf36.HasValue && pf36.Value <= 2.3m && mpg >= 16m)
+        {
+            strengths.Add((65, new ScoutingTraitDto
+            {
+                Title = "Clean Defensive Foul Discipline",
+                MetricBadge = $"{Fmt(pf36.Value, "F1")} PF/36",
+                Detail = "Defends without reaching, staying available in heavy fourth-quarter minutes.",
+                Category = "Discipline"
+            }));
+        }
+
+        // 10. European Tactical Translation & Age Upside
+        if (resolvedEci >= 72.0 && mpg >= 10m)
+        {
+            strengths.Add((78, new ScoutingTraitDto
+            {
+                Title = "Plug-and-Play European Fit",
+                MetricBadge = $"ECI %{FmtD(resolvedEci, "F0")}",
+                Detail = "Perimeter spacing, free-throw touch, and ball security profile translate cleanly to EuroLeague systems.",
+                Category = "Fit"
+            }));
+        }
+
+        int? age = player?.CurrentAge;
+        if (age.HasValue && age.Value <= 22 && (stat.EuroLeagueTransitionIndex ?? 0m) >= 72m)
+        {
+            strengths.Add((79, new ScoutingTraitDto
+            {
+                Title = "High-Upside Developmental Curve",
+                MetricBadge = $"Age {age.Value} • ETI {Fmt(stat.EuroLeagueTransitionIndex!.Value, "F0")}",
+                Detail = "Combines strong immediate transition production with multi-year physical and skill growth runway.",
+                Category = "Upside"
+            }));
+        }
+
+        // Fallback relative edges so balanced role players still get an honest, metric-backed breakdown
+        var coreDimensions = new (string Key, string Label, string Cat)[]
+        {
+            ("PtsPer36", "Per-Minute Scoring Pace", "Scoring"),
+            ("TrueShootingPct", "Scoring Efficiency (TS%)", "Efficiency"),
+            ("Fg3Pct", "Perimeter Shot Conversion", "Shooting"),
+            ("AstPer36", "Playmaking Creation", "Playmaking"),
+            ("RebPer36", "Positional Rebounding", "Rebounding"),
+            ("StocksPer36", "Defensive Disruption", "Defense")
+        };
+
+        if (strengths.Count == 0)
+        {
+            var topDim = coreDimensions.OrderByDescending(d => GetPct(d.Key)).First();
+            strengths.Add((50, new ScoutingTraitDto
+            {
+                Title = $"Best Positional Edge: {topDim.Label}",
+                MetricBadge = $"{GetPct(topDim.Key)}th %ile",
+                Detail = $"Relative statistical strength compared to positional peers across {stat.League}.",
+                Category = topDim.Cat
+            }));
+        }
+
+        if (weaknesses.Count == 0)
+        {
+            var lowDim = coreDimensions.OrderBy(d => GetPct(d.Key)).First();
+            weaknesses.Add((50, new ScoutingTraitDto
+            {
+                Title = $"Primary Development Area: {lowDim.Label}",
+                MetricBadge = $"{GetPct(lowDim.Key)}th %ile",
+                Detail = $"Lowest relative positional percentile in this season's statistical profile.",
+                Category = lowDim.Cat
+            }));
+        }
+
+        var topStrengths = strengths
+            .OrderByDescending(x => x.Score)
+            .Take(4)
+            .Select(x => x.Trait)
+            .ToList();
+
+        var topWeaknesses = weaknesses
+            .OrderByDescending(x => x.Score)
+            .Take(4)
+            .Select(x => x.Trait)
+            .ToList();
+
+        return (topStrengths, topWeaknesses);
     }
 
     private static double Normalize(decimal? value, double min, double max)

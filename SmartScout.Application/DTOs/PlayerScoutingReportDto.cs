@@ -139,4 +139,15 @@ public class PlayerScoutingReportDto
     public double? BuyLowBounceBackIndex { get; set; }
 
     public string TacticalVerdict { get; set; } = string.Empty;
+
+    public List<ScoutingTraitDto> Strengths { get; set; } = new();
+    public List<ScoutingTraitDto> Weaknesses { get; set; } = new();
+}
+
+public class ScoutingTraitDto
+{
+    public string Title { get; set; } = string.Empty;
+    public string Detail { get; set; } = string.Empty;
+    public string MetricBadge { get; set; } = string.Empty;
+    public string Category { get; set; } = string.Empty;
 }

@@ -168,6 +168,11 @@ public class Player
         _seasonStats.Add(stat);
     }
 
+    public void AddInjury(PlayerInjury injury)
+    {
+        _injuries.Add(injury);
+    }
+
     public void SetScoutNotes(string? notes)
     {
         ScoutNotes = string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();

@@ -54,6 +54,8 @@ public class PlayerComparisonProfileDto
     public decimal? AssistToTurnoverRatio { get; set; }
     public decimal? EuroLeagueTransitionIndex { get; set; }
     public Dictionary<string, int> Percentiles { get; set; } = new();
+    public List<ScoutingTraitDto> Strengths { get; set; } = new();
+    public List<ScoutingTraitDto> Weaknesses { get; set; } = new();
 
     public RadarMetricsDto RadarMetrics { get; set; } = null!;
 }

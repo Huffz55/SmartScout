@@ -16,4 +16,10 @@ public interface IPlayerAnalyticsService
     double CalculateBuyLowBounceBackIndex(PlayerSeasonStat currentStat, IEnumerable<PlayerSeasonStat>? careerHistory = null);
     Dictionary<string, int> CalculatePositionalPercentiles(PlayerSeasonStat stat, string? position = null);
     void PopulateShotDietAndPhysicality(PlayerScoutingReportDto dto, PlayerSeasonStat stat);
+    (List<ScoutingTraitDto> Strengths, List<ScoutingTraitDto> Weaknesses) AnalyzeStrengthsAndWeaknesses(
+        PlayerSeasonStat stat,
+        Player? player = null,
+        Dictionary<string, int>? percentiles = null,
+        double? eci = null,
+        double? dpi = null);
 }

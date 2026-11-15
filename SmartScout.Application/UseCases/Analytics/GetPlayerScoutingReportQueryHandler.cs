@@ -59,6 +59,8 @@ public class GetPlayerScoutingReportQueryHandler : IRequestHandler<GetPlayerScou
         double eci = _analyticsService.CalculateEuropeanCompatibilityIndex(stat);
         double dpi = _analyticsService.CalculateDefensivePressureIndex(stat);
         double buyLow = _analyticsService.CalculateBuyLowBounceBackIndex(stat, player.SeasonStats);
+        var percentiles = _analyticsService.CalculatePositionalPercentiles(stat, player.Position);
+        var (strengths, weaknesses) = _analyticsService.AnalyzeStrengthsAndWeaknesses(stat, player, percentiles, eci, dpi);
 
         string verdict = GenerateTacticalVerdict(player.FirstName, player.LastName, archetype.ToString(), stat, radar, eci, dpi, buyLow, player.CurrentAge, player.Position);
 
@@ -90,7 +92,9 @@ public class GetPlayerScoutingReportQueryHandler : IRequestHandler<GetPlayerScou
             EuroLeagueTransitionIndex = stat.EuroLeagueTransitionIndex,
             StocksPer36 = stat.StocksPer36 ?? ((stat.StlPer36 ?? 0) + (stat.BlkPer36 ?? 0)),
             ThreePointRate = stat.ThreePointRate,
-            Percentiles = _analyticsService.CalculatePositionalPercentiles(stat, player.Position),
+            Percentiles = percentiles,
+            Strengths = strengths,
+            Weaknesses = weaknesses,
             CareerHistory = player.SeasonStats
                 .OrderBy(s => s.Season)
                 .Select(s => new CareerSeasonStintDto

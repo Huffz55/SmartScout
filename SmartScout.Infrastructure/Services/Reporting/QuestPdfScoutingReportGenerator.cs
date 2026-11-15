@@ -254,6 +254,42 @@ public class QuestPdfScoutingReportGenerator : IScoutingReportGenerator
                 c.Item().PaddingTop(2).Text(model.TacticalVerdict).FontSize(8f).LineHeight(1.2f).FontColor(Color.FromHex("#1E293B"));
             });
 
+            // 6b. Strengths & Swing Weaknesses Two-Column Summary
+            if ((model.Strengths != null && model.Strengths.Count > 0) || (model.Weaknesses != null && model.Weaknesses.Count > 0))
+            {
+                col.Item().Height(5);
+                col.Item().Row(row =>
+                {
+                    row.RelativeItem().Background(Color.FromHex("#ECFDF5")).Border(1).BorderColor(Color.FromHex("#10B981")).Padding(6).Column(c =>
+                    {
+                        c.Item().Text("KEY SCOUTING STRENGTHS").FontSize(7.5f).Bold().FontColor(Color.FromHex("#047857"));
+                        if (model.Strengths != null)
+                        {
+                            foreach (var s in model.Strengths.Count > 4 ? model.Strengths.GetRange(0, 4) : model.Strengths)
+                            {
+                                c.Item().PaddingTop(2).Text($"• {s.Title} ({s.MetricBadge})").FontSize(7f).Bold().FontColor(Color.FromHex("#065F46"));
+                                c.Item().Text($"  {s.Detail}").FontSize(6.5f).FontColor(Color.FromHex("#334155"));
+                            }
+                        }
+                    });
+
+                    row.ConstantItem(8);
+
+                    row.RelativeItem().Background(Color.FromHex("#FFF7ED")).Border(1).BorderColor(Color.FromHex("#F59E0B")).Padding(6).Column(c =>
+                    {
+                        c.Item().Text("SWING WEAKNESSES & RISK FACTORS").FontSize(7.5f).Bold().FontColor(Color.FromHex("#B45309"));
+                        if (model.Weaknesses != null)
+                        {
+                            foreach (var w in model.Weaknesses.Count > 4 ? model.Weaknesses.GetRange(0, 4) : model.Weaknesses)
+                            {
+                                c.Item().PaddingTop(2).Text($"• {w.Title} ({w.MetricBadge})").FontSize(7f).Bold().FontColor(Color.FromHex("#9A3412"));
+                                c.Item().Text($"  {w.Detail}").FontSize(6.5f).FontColor(Color.FromHex("#334155"));
+                            }
+                        }
+                    });
+                });
+            }
+
             // 7. Verified Medical & Injury Log
             col.Item().Height(5);
             if (model.Injuries != null && model.Injuries.Count > 0)

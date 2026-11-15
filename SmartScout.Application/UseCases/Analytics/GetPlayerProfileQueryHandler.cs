@@ -68,6 +68,8 @@ public class GetPlayerProfileQueryHandler : IRequestHandler<GetPlayerProfileQuer
         double eci = _analyticsService.CalculateEuropeanCompatibilityIndex(stat);
         double dpi = _analyticsService.CalculateDefensivePressureIndex(stat);
         double buyLow = _analyticsService.CalculateBuyLowBounceBackIndex(stat, player.SeasonStats);
+        var percentiles = _analyticsService.CalculatePositionalPercentiles(stat, player.Position);
+        var (strengths, weaknesses) = _analyticsService.AnalyzeStrengthsAndWeaknesses(stat, player, percentiles, eci, dpi);
 
         var dto = new PlayerScoutingReportDto
         {
@@ -96,7 +98,9 @@ public class GetPlayerProfileQueryHandler : IRequestHandler<GetPlayerProfileQuer
             EuroLeagueTransitionIndex = stat.EuroLeagueTransitionIndex,
             StocksPer36 = stat.StocksPer36 ?? ((stat.StlPer36 ?? 0) + (stat.BlkPer36 ?? 0)),
             ThreePointRate = stat.ThreePointRate,
-            Percentiles = _analyticsService.CalculatePositionalPercentiles(stat, player.Position),
+            Percentiles = percentiles,
+            Strengths = strengths,
+            Weaknesses = weaknesses,
             CareerHistory = player.SeasonStats
                 .OrderBy(s => s.Season)
                 .Select(s => new CareerSeasonStintDto

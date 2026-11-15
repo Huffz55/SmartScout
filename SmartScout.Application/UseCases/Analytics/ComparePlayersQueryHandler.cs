@@ -37,9 +37,11 @@ public class ComparePlayersQueryHandler : IRequestHandler<ComparePlayersQuery, P
 
         var statA = await _dbContext.SeasonStats
             .Include(s => s.Player)
+                .ThenInclude(p => p!.Injuries)
             .FirstOrDefaultAsync(s => s.PlayerId == request.PlayerAId && s.Season == request.SeasonA, cancellationToken)
             ?? await _dbContext.SeasonStats
                 .Include(s => s.Player)
+                    .ThenInclude(p => p!.Injuries)
                 .OrderByDescending(s => s.Season)
                 .FirstOrDefaultAsync(s => s.PlayerId == request.PlayerAId, cancellationToken);
 
@@ -50,9 +52,11 @@ public class ComparePlayersQueryHandler : IRequestHandler<ComparePlayersQuery, P
 
         var statB = await _dbContext.SeasonStats
             .Include(s => s.Player)
+                .ThenInclude(p => p!.Injuries)
             .FirstOrDefaultAsync(s => s.PlayerId == request.PlayerBId && s.Season == request.SeasonB, cancellationToken)
             ?? await _dbContext.SeasonStats
                 .Include(s => s.Player)
+                    .ThenInclude(p => p!.Injuries)
                 .OrderByDescending(s => s.Season)
                 .FirstOrDefaultAsync(s => s.PlayerId == request.PlayerBId, cancellationToken);
 
