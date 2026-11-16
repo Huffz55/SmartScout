@@ -18,7 +18,8 @@ public record LiveSyncCycleResult(
     int InjuryMatchedCount,
     bool StatSyncExecuted,
     int StatsUpsertedCount,
-    TimeSpan RecommendedNextDelay);
+    TimeSpan RecommendedNextDelay,
+    int BioEnrichedCount = 0);
 
 /// <summary>
 /// Coordinates staleness-aware live injury syncing and active-season statistical refreshes
@@ -33,19 +34,22 @@ public class LiveSyncCoordinator
     private readonly IMediator _mediator;
     private readonly ScraperOptions _options;
     private readonly ILogger<LiveSyncCoordinator> _logger;
+    private readonly IPlayerBioEnrichmentService? _bioEnrichmentService;
 
     public LiveSyncCoordinator(
         ISmartScoutDbContext dbContext,
         IPlayerInjurySyncService injurySyncService,
         IMediator mediator,
         IOptions<ScraperOptions> options,
-        ILogger<LiveSyncCoordinator> logger)
+        ILogger<LiveSyncCoordinator> logger,
+        IPlayerBioEnrichmentService? bioEnrichmentService = null)
     {
         _dbContext = dbContext;
         _injurySyncService = injurySyncService;
         _mediator = mediator;
         _options = options.Value;
         _logger = logger;
+        _bioEnrichmentService = bioEnrichmentService;
     }
 
     internal record SyncScheduleDecision(
@@ -97,6 +101,7 @@ public class LiveSyncCoordinator
         int injuryMatched = 0;
         bool statExecuted = false;
         int statsUpserted = 0;
+        int bioEnriched = 0;
         bool hadError = false;
 
         IngestionJobLog? injuryLog = null;
@@ -162,6 +167,25 @@ public class LiveSyncCoordinator
                 statExecuted = true;
 
                 _logger.LogInformation("Scheduled season {Season} stat sync completed: {Count} records upserted.", _options.LiveSeasonYear, statsUpserted);
+
+                if (statsUpserted > 0 && _options.EnableAutoBioEnrichAfterStatSync && _bioEnrichmentService != null)
+                {
+                    try
+                    {
+                        var bioResult = await _bioEnrichmentService.EnrichPlayerBiosAsync(
+                            league: null,
+                            limit: _options.AutoBioEnrichBatchSize,
+                            cancellationToken);
+                        bioEnriched = bioResult.TotalEnriched;
+                        _logger.LogInformation(
+                            "Post-sync automated bio enrichment completed: {Enriched} of {Processed} players enriched.",
+                            bioResult.TotalEnriched, bioResult.TotalProcessed);
+                    }
+                    catch (Exception bioEx) when (bioEx is not OperationCanceledException)
+                    {
+                        _logger.LogWarning(bioEx, "Post-sync automated bio enrichment failed cleanly.");
+                    }
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -171,6 +195,6 @@ public class LiveSyncCoordinator
         }
 
         TimeSpan nextDelay = hadError ? TimeSpan.FromMinutes(10) : plan.NextDelayIfClean;
-        return new LiveSyncCycleResult(injuryExecuted, injuryMatched, statExecuted, statsUpserted, nextDelay);
+        return new LiveSyncCycleResult(injuryExecuted, injuryMatched, statExecuted, statsUpserted, nextDelay, bioEnriched);
     }
 }

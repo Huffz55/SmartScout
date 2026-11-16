@@ -58,4 +58,11 @@ public class SleeperPlayerDto
     public string? ActiveInjuryStatus { get; set; }
     public string? ActiveInjuryDetail { get; set; }
     public List<string> ScoutingReasons { get; set; } = new();
+
+    public SleeperPlayerDto Clone()
+    {
+        var copy = (SleeperPlayerDto)MemberwiseClone();
+        copy.ScoutingReasons = new List<string>(ScoutingReasons);
+        return copy;
+    }
 }

@@ -22,15 +22,18 @@ public partial class WikipediaBioEnrichmentService : IPlayerBioEnrichmentService
     private readonly ISmartScoutDbContext _dbContext;
     private readonly HttpClient _httpClient;
     private readonly ILogger<WikipediaBioEnrichmentService> _logger;
+    private readonly IScoutingCacheState? _cacheState;
 
     public WikipediaBioEnrichmentService(
         ISmartScoutDbContext dbContext,
         HttpClient httpClient,
-        ILogger<WikipediaBioEnrichmentService> logger)
+        ILogger<WikipediaBioEnrichmentService> logger,
+        IScoutingCacheState? cacheState = null)
     {
         _dbContext = dbContext;
         _httpClient = httpClient;
         _logger = logger;
+        _cacheState = cacheState;
 
         if (_httpClient.DefaultRequestHeaders.UserAgent.Count == 0)
         {
@@ -57,6 +60,7 @@ public partial class WikipediaBioEnrichmentService : IPlayerBioEnrichmentService
         var targetPlayers = await query
             .Where(p => p.BirthDate == null || p.HeightCm == null || p.WeightKg == null || p.PrimaryPosition == null || p.Nationality == null || p.Nationality == "INTL")
             .OrderByDescending(p => p.SeasonStats.Any(s => s.Season >= 2026 && s.GamesPlayed >= 3) ? 1 : 0)
+            .ThenByDescending(p => p.HeightCm == null ? 1 : 0)
             .ThenByDescending(p => p.League != "NCAAD1" ? 1 : 0)
             .ThenByDescending(p => p.BirthDate == null ? 1 : 0)
             .ThenByDescending(p => (p.Nationality == null || p.Nationality == "INTL") ? 1 : 0)
@@ -71,6 +75,10 @@ public partial class WikipediaBioEnrichmentService : IPlayerBioEnrichmentService
         }
 
         var enrichedList = await EnrichPlayerBatchListAsync(targetPlayers, cancellationToken);
+        if (enrichedList.Count > 0)
+        {
+            _cacheState?.BumpVersion();
+        }
         int failedCount = Math.Max(0, targetPlayers.Count - enrichedList.Count);
 
         return new BioEnrichmentSummaryDto(targetPlayers.Count, enrichedList.Count, failedCount, enrichedList);
@@ -131,6 +139,10 @@ public partial class WikipediaBioEnrichmentService : IPlayerBioEnrichmentService
             .ToList();
 
         var enrichedList = await EnrichPlayerBatchListAsync(playersNeedingRemote, cancellationToken);
+        if (internalNormalizedCount > 0 || enrichedList.Count > 0)
+        {
+            _cacheState?.BumpVersion();
+        }
         int failed = Math.Max(0, totalFound - enrichedList.Count);
         return new BioEnrichmentSummaryDto(totalFound, enrichedList.Count, failed, enrichedList);
     }

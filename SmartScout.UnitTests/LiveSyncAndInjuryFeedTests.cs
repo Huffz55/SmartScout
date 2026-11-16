@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using SmartScout.Application.DTOs;
+using SmartScout.Application.Services;
 using SmartScout.Infrastructure.Options;
 using SmartScout.Infrastructure.Services;
 using Xunit;
@@ -120,5 +123,29 @@ public class LiveSyncAndInjuryFeedTests
         Assert.True(decision.RunStatSync);
         Assert.False(decision.StatSyncAllBaseline);
         Assert.Equal(TimeSpan.FromHours(4), decision.NextDelayIfClean);
+    }
+
+    [Fact]
+    public void ScoutingCacheState_AndSleeperClone_ShouldIsolateCacheEntriesAndIncrementVersion()
+    {
+        var cacheState = new ScoutingCacheState();
+        long v1 = cacheState.Version;
+        long v2 = cacheState.BumpVersion();
+        Assert.Equal(v1 + 1, v2);
+        Assert.Equal(v2, cacheState.Version);
+
+        var original = new SleeperPlayerDto
+        {
+            FullName = "Sample Guard",
+            ActiveInjuryStatus = null,
+            ScoutingReasons = new List<string> { "Spacing" }
+        };
+
+        var copy = original.Clone();
+        copy.ActiveInjuryStatus = "Out";
+        copy.ScoutingReasons.Add("Extra");
+
+        Assert.Null(original.ActiveInjuryStatus);
+        Assert.Single(original.ScoutingReasons);
     }
 }

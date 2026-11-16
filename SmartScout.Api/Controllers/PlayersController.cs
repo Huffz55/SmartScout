@@ -382,13 +382,15 @@ public class PlayersController : ControllerBase
     [HttpPost("{id:guid}/watchlist")]
     public async Task<IActionResult> ToggleWatchlist(
         Guid id, 
-        [FromServices] ISmartScoutDbContext dbContext, 
-        CancellationToken cancellationToken)
+        [FromServices] ISmartScoutDbContext dbContext,
+        [FromServices] IScoutingCacheState? cacheState = null,
+        CancellationToken cancellationToken = default)
     {
         var player = await dbContext.Players.FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
         if (player == null) return NotFound();
         player.ToggleWatchlist();
         await dbContext.SaveChangesAsync(cancellationToken);
+        cacheState?.BumpVersion();
         return Ok(new { isWatchlisted = player.IsWatchlisted });
     }
 
@@ -453,6 +455,7 @@ public class PlayersController : ControllerBase
     public async Task<IActionResult> SeedDemoWatchlist(
         [FromServices] ISmartScoutDbContext dbContext,
         [FromServices] IOptions<ScraperOptions> scraperOptions,
+        [FromServices] IScoutingCacheState? cacheState = null,
         CancellationToken cancellationToken = default)
     {
         int existingCount = await dbContext.Players.CountAsync(p => p.IsWatchlisted, cancellationToken);
@@ -489,6 +492,7 @@ public class PlayersController : ControllerBase
         if (selected.Count > 0)
         {
             await dbContext.SaveChangesAsync(cancellationToken);
+            cacheState?.BumpVersion();
         }
 
         return Ok(new

@@ -16,6 +16,8 @@ public class ScraperOptions
     public int CurrentSeasonStatRefreshHours { get; set; } = 24;
     public int LiveSeasonYear { get; set; } = 2027;
     public int StartupSyncDelaySeconds { get; set; } = 20;
+    public bool EnableAutoBioEnrichAfterStatSync { get; set; } = true;
+    public int AutoBioEnrichBatchSize { get; set; } = 150;
     public bool EnableDomesticLeagueFullSweep { get; set; } = false;
 
     // Multi-season European and international basketball ingestion from 2018-19 (2019) to 2026-27 (2027)

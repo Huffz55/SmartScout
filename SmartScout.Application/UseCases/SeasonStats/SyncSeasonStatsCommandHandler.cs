@@ -15,11 +15,16 @@ public class SyncSeasonStatsCommandHandler : IRequestHandler<SyncSeasonStatsComm
 {
     private readonly IEnumerable<ISeasonStatSyncStrategy> _syncStrategies;
     private readonly ISmartScoutDbContext _dbContext;
+    private readonly IScoutingCacheState? _cacheState;
 
-    public SyncSeasonStatsCommandHandler(IEnumerable<ISeasonStatSyncStrategy> syncStrategies, ISmartScoutDbContext dbContext)
+    public SyncSeasonStatsCommandHandler(
+        IEnumerable<ISeasonStatSyncStrategy> syncStrategies,
+        ISmartScoutDbContext dbContext,
+        IScoutingCacheState? cacheState = null)
     {
         _syncStrategies = syncStrategies;
         _dbContext = dbContext;
+        _cacheState = cacheState;
     }
 
     public async Task<int> Handle(SyncSeasonStatsCommand request, CancellationToken cancellationToken)
@@ -338,6 +343,11 @@ public class SyncSeasonStatsCommandHandler : IRequestHandler<SyncSeasonStatsComm
                     await _dbContext.SaveChangesAsync(cancellationToken);
                 }
             }
+        }
+
+        if (totalUpsertedCount > 0)
+        {
+            _cacheState?.BumpVersion();
         }
 
         return totalUpsertedCount;

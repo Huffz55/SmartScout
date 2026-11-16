@@ -35,6 +35,7 @@ public partial class PlayerInjurySyncService : IPlayerInjurySyncService
     private readonly ISmartScoutDbContext _dbContext;
     private readonly HttpClient _httpClient;
     private readonly ILogger<PlayerInjurySyncService> _logger;
+    private readonly IScoutingCacheState? _cacheState;
 
     internal record RawInjuryRecord(
         string PlayerName,
@@ -58,11 +59,13 @@ public partial class PlayerInjurySyncService : IPlayerInjurySyncService
     public PlayerInjurySyncService(
         ISmartScoutDbContext dbContext,
         HttpClient httpClient,
-        ILogger<PlayerInjurySyncService> logger)
+        ILogger<PlayerInjurySyncService> logger,
+        IScoutingCacheState? cacheState = null)
     {
         _dbContext = dbContext;
         _httpClient = httpClient;
         _logger = logger;
+        _cacheState = cacheState;
     }
 
     public async Task<InjurySyncSummaryDto> SyncLiveInjuriesAsync(CancellationToken cancellationToken = default)
@@ -258,6 +261,10 @@ public partial class PlayerInjurySyncService : IPlayerInjurySyncService
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+        if (inserted + updated + recoveredMarked > 0)
+        {
+            _cacheState?.BumpVersion();
+        }
 
         _logger.LogInformation(
             "Injury sync completed: {TotalFetched} raw records -> {Matched} matched players ({Inserted} inserted, {Updated} updated, {Recovered} recovered).",

@@ -15,6 +15,7 @@ public static class ApplicationServiceRegistration
         var assembly = Assembly.GetExecutingAssembly();
 
         services.AddMemoryCache();
+        services.AddSingleton<IScoutingCacheState, ScoutingCacheState>();
         services.AddScoped<IPlayerAnalyticsService, PlayerAnalyticsService>();
         services.AddScoped<ISmartScoutSearchEngine, SmartScoutSearchEngine>();
         services.AddScoped<ISleeperScoutingService, SleeperScoutingService>();
