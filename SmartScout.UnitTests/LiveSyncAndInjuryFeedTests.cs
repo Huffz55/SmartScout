@@ -148,4 +148,98 @@ public class LiveSyncAndInjuryFeedTests
         Assert.Null(original.ActiveInjuryStatus);
         Assert.Single(original.ScoutingReasons);
     }
+
+    [Fact]
+    public void ParseAcbParteMedicoRss_ShouldExtractOutQuestionableRecoveredAndSkipAvailable()
+    {
+        string rss = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<rss version=""2.0"" xmlns:content=""http://purl.org/rss/1.0/modules/content/"">
+  <channel>
+    <item>
+      <title>Novedades y parte médico de la Jornada 8 de la Liga Endesa 2026-27</title>
+      <pubDate>Fri, 13 Nov 2026 20:00:00 +0000</pubDate>
+      <content:encoded><![CDATA[
+        <p>• Barça: Kevin Punter (esguince del tobillo izquierdo) sigue siendo baja. Por otro lado, se espera que Umoja Gibson pueda jugar, mientras que Juan Núñez es duda.</p>
+        <p>• Kids&amp;Us Manresa: Chibuzo Agbo se suma a la lista de bajas. La buena noticia llega de la mano de Timmy Allen, que regresa tras superar su lesión.</p>
+      ]]></content:encoded>
+    </item>
+  </channel>
+</rss>";
+
+        var acbCandidates = new List<PlayerInjurySyncService.PlayerCandidate>
+        {
+            new(Guid.NewGuid(), "Kevin Punter", "kevin punter", "kevin punter", "ACB", "Barca", new HashSet<string> { "ACB" }),
+            new(Guid.NewGuid(), "Umoja Gibson", "umoja gibson", "umoja gibson", "ACB", "Barca", new HashSet<string> { "ACB" }),
+            new(Guid.NewGuid(), "Juan Nunez", "juan nunez", "juan nunez", "ACB", "Barca", new HashSet<string> { "ACB" }),
+            new(Guid.NewGuid(), "Chibuzo Agbo", "chibuzo agbo", "chibuzo agbo", "ACB", "Manresa", new HashSet<string> { "ACB" }),
+            new(Guid.NewGuid(), "Timmy Allen", "timmy allen", "timmy allen", "ACB", "Manresa", new HashSet<string> { "ACB" })
+        };
+
+        var utcNow = new DateTime(2026, 11, 16, 12, 0, 0, DateTimeKind.Utc);
+        var records = PlayerInjurySyncService.ParseAcbParteMedicoRss(rss, acbCandidates, utcNow);
+
+        var punter = Assert.Single(records, r => r.PlayerName == "kevin punter");
+        Assert.Equal("Out", punter.Status);
+        Assert.Equal("Ankle", punter.InjuryType);
+        Assert.Equal("ACB", punter.PreferredLeague);
+
+        var nunez = Assert.Single(records, r => r.PlayerName == "juan nunez");
+        Assert.Equal("Questionable", nunez.Status);
+
+        var agbo = Assert.Single(records, r => r.PlayerName == "chibuzo agbo");
+        Assert.Equal("Out", agbo.Status);
+
+        var allen = Assert.Single(records, r => r.PlayerName == "timmy allen");
+        Assert.Equal("Recovered", allen.Status);
+
+        Assert.DoesNotContain(records, r => r.PlayerName == "umoja gibson");
+    }
+
+    [Fact]
+    public void ParseEuropeanNewsItems_ShouldMatchSubjectInjuriesAndRejectNoiseHeadlines()
+    {
+        var euroCandidates = new List<PlayerInjurySyncService.PlayerCandidate>
+        {
+            new(Guid.NewGuid(), "Nicolo Melli", "nicolo melli", "nicolo melli", "BSL", "Fenerbahce", new HashSet<string> { "BSL", "EuroLeague" }),
+            new(Guid.NewGuid(), "Braxton Key", "braxton key", "braxton key", "BSL", "Fenerbahce", new HashSet<string> { "BSL", "EuroLeague" }),
+            new(Guid.NewGuid(), "Cedi Osman", "cedi osman", "cedi osman", "EuroCup", "PAOK", new HashSet<string> { "EuroCup", "GBL" }),
+            new(Guid.NewGuid(), "Luka Scuka", "luka scuka", "luka scuka", "EuroCup", "Manresa", new HashSet<string> { "EuroCup", "ACB" })
+        };
+
+        var utcNow = new DateTime(2026, 11, 16, 12, 0, 0, DateTimeKind.Utc);
+        var items = new[]
+        {
+            (
+                Title: "Double blow for Fenerbahce: Nicolo Melli faces surgery, Braxton Key suffers dislocated finger",
+                Body: "Fenerbahce's derby win was overshadowed by severe injury news involving Nicolo Melli and Braxton Key.",
+                PublishedAt: utcNow.AddHours(-6)
+            ),
+            (
+                Title: "Osman undergoes surgery and will be sidelined for three months",
+                Body: "Cedi Osman underwent surgery, with a recovery time estimated at three months.",
+                PublishedAt: utcNow.AddDays(-9)
+            ),
+            (
+                Title: "Luka Doncic FIBA teammate returns to EuroCup, signs with Manresa",
+                Body: "Manresa welcomes Luka Scuka, while Turk Telekom sidelines Tony Taylor.",
+                PublishedAt: utcNow.AddDays(-5)
+            )
+        };
+
+        var records = PlayerInjurySyncService.ParseEuropeanNewsItems(items, "EuroCup", "BasketballSphere EU", euroCandidates, utcNow);
+
+        var melli = Assert.Single(records, r => r.PlayerName == "nicolo melli");
+        Assert.Equal("Out", melli.Status);
+        Assert.Equal("Surgery", melli.InjuryType);
+
+        var key = Assert.Single(records, r => r.PlayerName == "braxton key");
+        Assert.Equal("Out", key.Status);
+        Assert.Equal("Finger", key.InjuryType);
+
+        var osman = Assert.Single(records, r => r.PlayerName == "cedi osman");
+        Assert.Equal("Out", osman.Status);
+        Assert.Equal("Surgery", osman.InjuryType);
+
+        Assert.DoesNotContain(records, r => r.PlayerName == "luka scuka");
+    }
 }

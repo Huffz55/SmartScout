@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Xml.Linq;
 using HtmlAgilityPack;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -31,6 +32,19 @@ public partial class PlayerInjurySyncService : IPlayerInjurySyncService
     private const string CbsNbaInjuriesUrl = "https://www.cbssports.com/nba/injuries/";
     private const string CoversNbaInjuriesUrl = "https://www.covers.com/sport/basketball/nba/injuries";
     private const string CoversNcaabInjuriesUrl = "https://www.covers.com/sport/basketball/ncaab/injuries";
+    private const string PiratasAcbRssUrl = "https://piratasdelbasket.net/feed/";
+    private const string EurohoopsEuroCupRssUrl = "https://www.eurohoops.net/en/eurocup/feed/";
+    private const string EurohoopsBslRssUrl = "https://www.eurohoops.net/en/tbl/feed/";
+    private const string EurohoopsAcbRssUrl = "https://www.eurohoops.net/en/acb/feed/";
+    private const string EurohoopsLegaARssUrl = "https://www.eurohoops.net/en/legabasket/feed/";
+    private const string EurohoopsBblRssUrl = "https://www.eurohoops.net/en/bbl/feed/";
+    private const string BasketballSphereWpJsonUrl = "https://basketballsphere.com/en/wp-json/wp/v2/posts?search=injury&per_page=15&_fields=date,title,excerpt";
+    private const string BasketfaulBslWpJsonUrl = "https://basketfaul.com.tr/wp-json/wp/v2/posts?search=sakat&per_page=15&_fields=date,title,excerpt";
+
+    private static readonly HashSet<string> EuropeanLeagues = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "EuroLeague", "EuroCup", "BSL", "ACB", "LegaA", "BBL", "BCL", "ABA", "GBL", "LKL", "LNB", "VTB"
+    };
 
     private readonly ISmartScoutDbContext _dbContext;
     private readonly HttpClient _httpClient;
@@ -47,7 +61,7 @@ public partial class PlayerInjurySyncService : IPlayerInjurySyncService
         string Source,
         string? Notes);
 
-    private record PlayerCandidate(
+    internal record PlayerCandidate(
         Guid Id,
         string FullName,
         string NormalizedName,
@@ -73,15 +87,6 @@ public partial class PlayerInjurySyncService : IPlayerInjurySyncService
         var sourceCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var fetched = new List<RawInjuryRecord>();
 
-        await TryCollectAsync("ESPN NBA", () => FetchEspnNbaAsync(cancellationToken), fetched, sourceCounts);
-        await TryCollectAsync("BRef NBA", () => FetchBRefNbaAsync(cancellationToken), fetched, sourceCounts);
-        await TryCollectAsync("Rotowire EuroLeague", () => FetchRotowireAsync(RotowireEuroInjuriesUrl, "EuroLeague", "Rotowire EuroLeague", cancellationToken), fetched, sourceCounts);
-        await TryCollectAsync("CBS NBA", () => FetchCbsNbaAsync(cancellationToken), fetched, sourceCounts);
-        await TryCollectAsync("Rotowire NBA", () => FetchRotowireAsync(RotowireNbaInjuriesUrl, "NBA", "Rotowire NBA", cancellationToken), fetched, sourceCounts);
-        await TryCollectAsync("Rotowire NCAA", () => FetchRotowireAsync(RotowireCbbInjuriesUrl, "NCAAD1", "Rotowire NCAA", cancellationToken), fetched, sourceCounts);
-        await TryCollectAsync("Covers NBA", () => FetchCoversInjuriesAsync(CoversNbaInjuriesUrl, "NBA", "Covers NBA", cancellationToken), fetched, sourceCounts);
-        await TryCollectAsync("Covers NCAAB", () => FetchCoversInjuriesAsync(CoversNcaabInjuriesUrl, "NCAAD1", "Covers NCAAB", cancellationToken), fetched, sourceCounts);
-
         var players = await _dbContext.Players
             .AsNoTracking()
             .Select(p => new
@@ -99,6 +104,7 @@ public partial class PlayerInjurySyncService : IPlayerInjurySyncService
             })
             .ToListAsync(cancellationToken);
 
+        var allCandidates = new List<PlayerCandidate>(players.Count);
         var byNorm = new Dictionary<string, List<PlayerCandidate>>(StringComparer.OrdinalIgnoreCase);
         var byCompact = new Dictionary<string, List<PlayerCandidate>>(StringComparer.OrdinalIgnoreCase);
 
@@ -115,6 +121,8 @@ public partial class PlayerInjurySyncService : IPlayerInjurySyncService
                 p.TeamName,
                 new HashSet<string>(p.ActiveLeagues, StringComparer.OrdinalIgnoreCase));
 
+            allCandidates.Add(candidate);
+
             if (!byNorm.TryGetValue(norm, out var list))
             {
                 list = new List<PlayerCandidate>();
@@ -129,6 +137,31 @@ public partial class PlayerInjurySyncService : IPlayerInjurySyncService
             }
             cList.Add(candidate);
         }
+
+        var acbCandidates = allCandidates
+            .Where(c => string.Equals(c.PrimaryLeague, "ACB", StringComparison.OrdinalIgnoreCase) || c.ActiveLeagues.Contains("ACB"))
+            .ToList();
+
+        var euroCandidates = allCandidates
+            .Where(c => EuropeanLeagues.Contains(c.PrimaryLeague) || c.ActiveLeagues.Any(l => EuropeanLeagues.Contains(l)))
+            .ToList();
+
+        await TryCollectAsync("ESPN NBA", () => FetchEspnNbaAsync(cancellationToken), fetched, sourceCounts);
+        await TryCollectAsync("BRef NBA", () => FetchBRefNbaAsync(cancellationToken), fetched, sourceCounts);
+        await TryCollectAsync("Rotowire EuroLeague", () => FetchRotowireAsync(RotowireEuroInjuriesUrl, "EuroLeague", "Rotowire EuroLeague", cancellationToken), fetched, sourceCounts);
+        await TryCollectAsync("CBS NBA", () => FetchCbsNbaAsync(cancellationToken), fetched, sourceCounts);
+        await TryCollectAsync("Rotowire NBA", () => FetchRotowireAsync(RotowireNbaInjuriesUrl, "NBA", "Rotowire NBA", cancellationToken), fetched, sourceCounts);
+        await TryCollectAsync("Rotowire NCAA", () => FetchRotowireAsync(RotowireCbbInjuriesUrl, "NCAAD1", "Rotowire NCAA", cancellationToken), fetched, sourceCounts);
+        await TryCollectAsync("Covers NBA", () => FetchCoversInjuriesAsync(CoversNbaInjuriesUrl, "NBA", "Covers NBA", cancellationToken), fetched, sourceCounts);
+        await TryCollectAsync("Covers NCAAB", () => FetchCoversInjuriesAsync(CoversNcaabInjuriesUrl, "NCAAD1", "Covers NCAAB", cancellationToken), fetched, sourceCounts);
+        await TryCollectAsync("Piratas ACB", () => FetchPiratasAcbParteMedicoAsync(acbCandidates, cancellationToken), fetched, sourceCounts);
+        await TryCollectAsync("Eurohoops EuroCup", () => FetchEurohoopsRssAsync(EurohoopsEuroCupRssUrl, "EuroCup", "Eurohoops EuroCup", euroCandidates, cancellationToken), fetched, sourceCounts);
+        await TryCollectAsync("Eurohoops BSL", () => FetchEurohoopsRssAsync(EurohoopsBslRssUrl, "BSL", "Eurohoops BSL", euroCandidates, cancellationToken), fetched, sourceCounts);
+        await TryCollectAsync("Eurohoops ACB", () => FetchEurohoopsRssAsync(EurohoopsAcbRssUrl, "ACB", "Eurohoops ACB", acbCandidates, cancellationToken), fetched, sourceCounts);
+        await TryCollectAsync("Eurohoops LegaA", () => FetchEurohoopsRssAsync(EurohoopsLegaARssUrl, "LegaA", "Eurohoops LegaA", euroCandidates, cancellationToken), fetched, sourceCounts);
+        await TryCollectAsync("Eurohoops BBL", () => FetchEurohoopsRssAsync(EurohoopsBblRssUrl, "BBL", "Eurohoops BBL", euroCandidates, cancellationToken), fetched, sourceCounts);
+        await TryCollectAsync("BasketballSphere EU", () => FetchWordPressInjuryPostsAsync(BasketballSphereWpJsonUrl, "EuroLeague", "BasketballSphere EU", euroCandidates, cancellationToken), fetched, sourceCounts);
+        await TryCollectAsync("Basketfaul BSL", () => FetchWordPressInjuryPostsAsync(BasketfaulBslWpJsonUrl, "BSL", "Basketfaul BSL", euroCandidates, cancellationToken), fetched, sourceCounts);
 
         // Deduplicate fetched entries by (PlayerId, NormalizedInjuryCategory) across overlapping feeds
         var mergedByKey = new Dictionary<(Guid PlayerId, string CategoryKey), (PlayerCandidate Candidate, RawInjuryRecord Record)>();
@@ -652,40 +685,480 @@ public partial class PlayerInjurySyncService : IPlayerInjurySyncService
         return Regex.Replace(lower, @"[^a-z0-9]", "");
     }
 
+    private async Task<List<RawInjuryRecord>> FetchPiratasAcbParteMedicoAsync(IReadOnlyList<PlayerCandidate> acbCandidates, CancellationToken ct)
+    {
+        if (acbCandidates.Count == 0) return new List<RawInjuryRecord>();
+        using var req = new HttpRequestMessage(HttpMethod.Get, PiratasAcbRssUrl);
+        req.Headers.TryAddWithoutValidation("User-Agent", "SmartScoutAnalytics/1.0 (+https://smartscout.local)");
+        using var resp = await _httpClient.SendAsync(req, ct);
+        resp.EnsureSuccessStatusCode();
+        var xml = await resp.Content.ReadAsStringAsync(ct);
+        return ParseAcbParteMedicoRss(xml, acbCandidates, DateTime.UtcNow);
+    }
+
+    internal static List<RawInjuryRecord> ParseAcbParteMedicoRss(string rssXml, IReadOnlyList<PlayerCandidate> acbCandidates, DateTime utcNow)
+    {
+        var results = new List<RawInjuryRecord>();
+        if (string.IsNullOrWhiteSpace(rssXml) || acbCandidates.Count == 0)
+            return results;
+
+        XDocument doc;
+        try { doc = XDocument.Parse(rssXml); }
+        catch { return results; }
+
+        XNamespace contentNs = "http://purl.org/rss/1.0/modules/content/";
+        var cutoff = utcNow.AddDays(-14);
+
+        var articles = doc.Descendants("item")
+            .Select(it => new
+            {
+                Title = (string?)it.Element("title") ?? string.Empty,
+                PubDate = ParseRssDate((string?)it.Element("pubDate"), utcNow),
+                Html = (string?)it.Element(contentNs + "encoded") ?? (string?)it.Element("description") ?? string.Empty
+            })
+            .Where(a => a.PubDate >= cutoff && IsAcbParteMedicoTitle(a.Title))
+            .OrderByDescending(a => a.PubDate)
+            .Take(1)
+            .ToList();
+
+        var filteredCandidates = acbCandidates
+            .Where(c => !string.IsNullOrWhiteSpace(c.NormalizedName) && c.NormalizedName.Contains(' ') && c.NormalizedName.Length >= 6)
+            .GroupBy(c => c.NormalizedName, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .ToList();
+
+        foreach (var art in articles)
+        {
+            var htmlDoc = new HtmlDocument();
+            htmlDoc.LoadHtml(art.Html);
+            var paragraphs = htmlDoc.DocumentNode.SelectNodes("//p");
+            if (paragraphs == null) continue;
+
+            foreach (var p in paragraphs)
+            {
+                string rawP = CleanText(WebUtility.HtmlDecode(p.InnerText));
+                if (!rawP.StartsWith("•", StringComparison.Ordinal) && !rawP.Contains(':', StringComparison.Ordinal))
+                    continue;
+
+                string trimmed = rawP.TrimStart('•', ' ');
+                int colonIdx = trimmed.IndexOf(':');
+                if (colonIdx <= 1 || colonIdx > 45) continue;
+
+                string teamName = trimmed[..colonIdx].Trim();
+                string body = trimmed[(colonIdx + 1)..].Trim();
+                var clauses = Regex.Split(body, @"(?<=[.;])\s+|,\s*(?=mientras que\b|aunque\b|salvo\b|mientras\b)", RegexOptions.IgnoreCase);
+
+                foreach (var clause in clauses)
+                {
+                    if (string.IsNullOrWhiteSpace(clause)) continue;
+                    string normClause = " " + Player.NormalizeName(clause, string.Empty) + " ";
+                    string lowerClause = clause.ToLowerInvariant();
+
+                    foreach (var cand in filteredCandidates)
+                    {
+                        string needle = " " + cand.NormalizedName + " ";
+                        int matchIdx = normClause.IndexOf(needle, StringComparison.Ordinal);
+                        if (matchIdx < 0) continue;
+
+                        string? status = ClassifyAcbClauseStatus(lowerClause, normClause, cand.NormalizedName);
+                        if (status == null) continue;
+
+                        string rawSnippet = ExtractLocalClauseWindow(clause, cand.FullName, cand.NormalizedName);
+                        string injuryType = ExtractInjuryBodyPart(rawSnippet);
+                        if (injuryType == "Undisclosed")
+                            injuryType = ExtractInjuryBodyPart(clause);
+
+                        string note = $"{art.Title} ({teamName}): {clause}";
+                        if (note.Length > 340) note = note[..340];
+
+                        results.Add(new RawInjuryRecord(
+                            cand.NormalizedName,
+                            "ACB",
+                            teamName,
+                            injuryType,
+                            status,
+                            art.PubDate,
+                            "Piratas ACB",
+                            note));
+                    }
+                }
+            }
+        }
+
+        return results;
+    }
+
+    private async Task<List<RawInjuryRecord>> FetchEurohoopsRssAsync(
+        string url,
+        string preferredLeague,
+        string sourceName,
+        IReadOnlyList<PlayerCandidate> euroCandidates,
+        CancellationToken ct)
+    {
+        if (euroCandidates.Count == 0) return new List<RawInjuryRecord>();
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        req.Headers.TryAddWithoutValidation("User-Agent", "SmartScoutAnalytics/1.0 (+https://smartscout.local)");
+        using var resp = await _httpClient.SendAsync(req, ct);
+        resp.EnsureSuccessStatusCode();
+        var xml = await resp.Content.ReadAsStringAsync(ct);
+
+        XDocument doc;
+        try { doc = XDocument.Parse(xml); }
+        catch { return new List<RawInjuryRecord>(); }
+
+        var posts = doc.Descendants("item")
+            .Select(it => (
+                Title: CleanText(WebUtility.HtmlDecode((string?)it.Element("title") ?? string.Empty)),
+                Body: StripHtmlToText((string?)it.Element("description") ?? string.Empty),
+                PublishedAt: ParseRssDate((string?)it.Element("pubDate"), DateTime.UtcNow)))
+            .ToList();
+
+        return ParseEuropeanNewsItems(posts, preferredLeague, sourceName, euroCandidates, DateTime.UtcNow);
+    }
+
+    private async Task<List<RawInjuryRecord>> FetchWordPressInjuryPostsAsync(
+        string url,
+        string preferredLeague,
+        string sourceName,
+        IReadOnlyList<PlayerCandidate> euroCandidates,
+        CancellationToken ct)
+    {
+        if (euroCandidates.Count == 0) return new List<RawInjuryRecord>();
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        req.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+        using var resp = await _httpClient.SendAsync(req, ct);
+        resp.EnsureSuccessStatusCode();
+        var json = await resp.Content.ReadAsStringAsync(ct);
+        if (string.IsNullOrWhiteSpace(json) || !json.TrimStart().StartsWith("[", StringComparison.Ordinal))
+            return new List<RawInjuryRecord>();
+
+        var posts = new List<(string Title, string Body, DateTime PublishedAt)>();
+        using var doc = JsonDocument.Parse(json);
+        foreach (var el in doc.RootElement.EnumerateArray())
+        {
+            string rawTitle = el.TryGetProperty("title", out var tObj) && tObj.TryGetProperty("rendered", out var tRend)
+                ? (tRend.GetString() ?? string.Empty)
+                : string.Empty;
+            string rawBody = el.TryGetProperty("excerpt", out var eObj) && eObj.TryGetProperty("rendered", out var eRend)
+                ? (eRend.GetString() ?? string.Empty)
+                : string.Empty;
+            DateTime pub = el.TryGetProperty("date", out var dVal) && DateTime.TryParse(dVal.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsedDt)
+                ? parsedDt
+                : DateTime.UtcNow;
+
+            posts.Add((StripHtmlToText(rawTitle), StripHtmlToText(rawBody), pub));
+        }
+
+        return ParseEuropeanNewsItems(posts, preferredLeague, sourceName, euroCandidates, DateTime.UtcNow);
+    }
+
+    internal static List<RawInjuryRecord> ParseEuropeanNewsItems(
+        IEnumerable<(string Title, string Body, DateTime PublishedAt)> items,
+        string preferredLeague,
+        string sourceName,
+        IReadOnlyList<PlayerCandidate> euroCandidates,
+        DateTime utcNow)
+    {
+        var results = new List<RawInjuryRecord>();
+        var cutoff = utcNow.AddDays(-21);
+
+        var distinctCandidates = euroCandidates
+            .Where(c => !string.IsNullOrWhiteSpace(c.NormalizedName) && c.NormalizedName.Contains(' ') && c.NormalizedName.Length >= 6)
+            .GroupBy(c => c.NormalizedName, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .ToList();
+
+        foreach (var item in items)
+        {
+            if (item.PublishedAt < cutoff || string.IsNullOrWhiteSpace(item.Title))
+                continue;
+
+            if (!IsInjuryNewsHeadline(item.Title) || IsNoiseNewsHeadline(item.Title))
+                continue;
+
+            string normTitle = " " + Player.NormalizeName(item.Title, string.Empty) + " ";
+            string firstSentence = item.Body.Split(new[] { ". ", "! ", "\n" }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? item.Body;
+            string normLead = " " + Player.NormalizeName(firstSentence, string.Empty) + " ";
+            string status = ClassifyNewsHeadlineStatus(item.Title);
+
+            foreach (var cand in distinctCandidates)
+            {
+                string fullNeedle = " " + cand.NormalizedName + " ";
+                bool matchedInTitle = normTitle.Contains(fullNeedle, StringComparison.Ordinal);
+
+                bool matchedViaSurnameHeadline = false;
+                if (!matchedInTitle && normLead.Contains(fullNeedle, StringComparison.Ordinal))
+                {
+                    var parts = cand.NormalizedName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                    string lastName = parts.Length >= 2 ? parts[^1] : string.Empty;
+                    if (lastName.Length >= 4 && normTitle.Contains(" " + lastName + " ", StringComparison.Ordinal))
+                    {
+                        matchedViaSurnameHeadline = true;
+                    }
+                }
+
+                if (!matchedInTitle && !matchedViaSurnameHeadline)
+                    continue;
+
+                string localWindow = matchedInTitle
+                    ? ExtractLocalClauseWindow(item.Title, cand.FullName, cand.NormalizedName)
+                    : ExtractLocalClauseWindow(firstSentence, cand.FullName, cand.NormalizedName);
+
+                string injuryType = ExtractInjuryBodyPart(localWindow);
+                if (injuryType == "Undisclosed")
+                {
+                    injuryType = ExtractInjuryBodyPart($"{item.Title}. {firstSentence}");
+                }
+
+                string leagueHint = !string.IsNullOrWhiteSpace(cand.PrimaryLeague) && EuropeanLeagues.Contains(cand.PrimaryLeague)
+                    ? cand.PrimaryLeague
+                    : preferredLeague;
+
+                string note = string.IsNullOrWhiteSpace(firstSentence) ? item.Title : $"{item.Title} — {firstSentence}";
+                if (note.Length > 340) note = note[..340];
+
+                results.Add(new RawInjuryRecord(
+                    cand.NormalizedName,
+                    leagueHint,
+                    cand.TeamName,
+                    injuryType,
+                    status,
+                    item.PublishedAt,
+                    sourceName,
+                    note));
+            }
+        }
+
+        return results;
+    }
+
+    private static bool IsAcbParteMedicoTitle(string title)
+    {
+        string norm = Player.NormalizeName(title, string.Empty);
+        return norm.Contains("parte medico", StringComparison.Ordinal);
+    }
+
+    private static string? ClassifyAcbClauseStatus(string lowerClause, string normClause, string normPlayerName)
+    {
+        if (normClause.Contains("ya esta recuperado", StringComparison.Ordinal) ||
+            normClause.Contains("regresa tras superar", StringComparison.Ordinal) ||
+            normClause.Contains("regresa tras su lesion", StringComparison.Ordinal))
+        {
+            return "Recovered";
+        }
+
+        // Ignore optimistic/available phrasing unless explicitly preceded by "salvo X" (everyone except X)
+        int playerIdx = normClause.IndexOf(" " + normPlayerName + " ", StringComparison.Ordinal);
+        int salvoIdx = normClause.IndexOf(" salvo ", StringComparison.Ordinal);
+        if (salvoIdx >= 0 && playerIdx > salvoIdx)
+        {
+            return "Out";
+        }
+
+        if (normClause.Contains("se espera que", StringComparison.Ordinal) ||
+            normClause.Contains("podra jugar", StringComparison.Ordinal) ||
+            normClause.Contains("podria regresar", StringComparison.Ordinal) ||
+            normClause.Contains("podria debutar", StringComparison.Ordinal) ||
+            normClause.Contains("da por segura", StringComparison.Ordinal) ||
+            normClause.Contains("han podido entrenar", StringComparison.Ordinal) ||
+            normClause.Contains("formaran parte de la convocatoria", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        if (lowerClause.Contains("duda", StringComparison.Ordinal) ||
+            normClause.Contains("en el aire", StringComparison.Ordinal) ||
+            normClause.Contains("incognita", StringComparison.Ordinal))
+        {
+            return "Questionable";
+        }
+
+        if (lowerClause.Contains("baja", StringComparison.Ordinal) ||
+            lowerClause.Contains("ausencia", StringComparison.Ordinal) ||
+            lowerClause.Contains("no estará disponible", StringComparison.Ordinal) ||
+            lowerClause.Contains("no estara disponible", StringComparison.Ordinal) ||
+            lowerClause.Contains("se perderá", StringComparison.Ordinal) ||
+            lowerClause.Contains("se suma", StringComparison.Ordinal) ||
+            lowerClause.Contains("se unen", StringComparison.Ordinal) ||
+            lowerClause.Contains("sufre", StringComparison.Ordinal) ||
+            lowerClause.Contains("lesión", StringComparison.Ordinal) ||
+            lowerClause.Contains("lesion", StringComparison.Ordinal) ||
+            lowerClause.Contains("esguince", StringComparison.Ordinal) ||
+            lowerClause.Contains("rotura", StringComparison.Ordinal) ||
+            lowerClause.Contains("subluxación", StringComparison.Ordinal) ||
+            lowerClause.Contains("fractura", StringComparison.Ordinal))
+        {
+            return "Out";
+        }
+
+        return null;
+    }
+
+    private static bool IsInjuryNewsHeadline(string title)
+    {
+        return EuropeanInjuryHeadlineRegex().IsMatch(title);
+    }
+
+    private static bool IsNoiseNewsHeadline(string title)
+    {
+        return EuropeanNoiseHeadlineRegex().IsMatch(title);
+    }
+
+    private static string ClassifyNewsHeadlineStatus(string title)
+    {
+        string lower = title.ToLowerInvariant();
+        if (lower.Contains("returns from injury", StringComparison.Ordinal) ||
+            lower.Contains("cleared to play", StringComparison.Ordinal) ||
+            lower.Contains("sakatlıktan çık", StringComparison.Ordinal) ||
+            lower.Contains("sakatliktan cik", StringComparison.Ordinal) ||
+            lower.Contains("parkelere dön", StringComparison.Ordinal))
+        {
+            return "Recovered";
+        }
+
+        if (lower.Contains("doubtful", StringComparison.Ordinal))
+            return "Doubtful";
+        if (lower.Contains("questionable", StringComparison.Ordinal))
+            return "Questionable";
+        if (lower.Contains("scare", StringComparison.Ordinal) || lower.Contains("day-to-day", StringComparison.Ordinal))
+            return "Day-To-Day";
+
+        return "Out";
+    }
+
+    private static string ExtractLocalClauseWindow(string text, string fullName, string normName)
+    {
+        var last = fullName.Split(' ', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? fullName;
+        foreach (var segment in Regex.Split(text, @"[,;:]|\band\b|\bmientras que\b", RegexOptions.IgnoreCase))
+        {
+            string normSeg = " " + Player.NormalizeName(segment, string.Empty) + " ";
+            if (normSeg.Contains(" " + normName + " ", StringComparison.Ordinal) ||
+                segment.Contains(fullName, StringComparison.OrdinalIgnoreCase) ||
+                (last.Length >= 4 && segment.Contains(last, StringComparison.OrdinalIgnoreCase)))
+            {
+                return segment.Trim();
+            }
+        }
+
+        int rawIdx = text.IndexOf(fullName, StringComparison.OrdinalIgnoreCase);
+        if (rawIdx < 0)
+            rawIdx = text.IndexOf(last, StringComparison.OrdinalIgnoreCase);
+        if (rawIdx < 0) return text;
+
+        int start = Math.Max(0, rawIdx - 25);
+        int len = Math.Min(text.Length - start, fullName.Length + 60);
+        return text.Substring(start, len);
+    }
+
+    private static string CleanText(string? input) =>
+        string.IsNullOrWhiteSpace(input) ? string.Empty : Regex.Replace(input, @"\s+", " ").Trim();
+
+    private static string StripHtmlToText(string html)
+    {
+        if (string.IsNullOrWhiteSpace(html)) return string.Empty;
+        string noTags = Regex.Replace(html, @"<[^>]+>", " ");
+        return CleanText(WebUtility.HtmlDecode(noTags));
+    }
+
+    private static DateTime ParseRssDate(string? rawDate, DateTime fallbackUtc)
+    {
+        if (!string.IsNullOrWhiteSpace(rawDate) &&
+            DateTimeOffset.TryParse(rawDate, CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out var dto))
+        {
+            return dto.UtcDateTime;
+        }
+        return fallbackUtc;
+    }
+
     private static string ExtractInjuryBodyPart(string? note)
     {
         if (string.IsNullOrWhiteSpace(note)) return "Undisclosed";
         var parenMatch = BodyPartParenRegex().Match(note);
         if (parenMatch.Success)
         {
-            return CultureInfo.InvariantCulture.TextInfo.ToTitleCase(parenMatch.Groups[1].Value.Trim().ToLowerInvariant());
+            string parenText = parenMatch.Groups[1].Value.Trim();
+            string mappedParen = MapKnownBodyPart(parenText);
+            if (mappedParen != "Undisclosed")
+                return mappedParen;
+
+            // Avoid turning club/date parentheses like "(Fenerbahce)" or "(Thu, Nov 12)" into injury types
+            if (parenText.Length <= 22 && !parenText.Contains(',') && !Regex.IsMatch(parenText, @"\d"))
+                return CultureInfo.InvariantCulture.TextInfo.ToTitleCase(parenText.ToLowerInvariant());
         }
 
-        string lower = note.ToLowerInvariant();
+        return MapKnownBodyPart(note);
+    }
+
+    private static string MapKnownBodyPart(string text)
+    {
+        string lower = text.ToLowerInvariant();
         (string Key, string Label)[] known =
         {
             ("acl", "ACL / Knee"),
+            ("cruzado", "ACL / Knee"),
+            ("çapraz bağ", "ACL / Knee"),
+            ("capraz bag", "ACL / Knee"),
             ("achilles", "Achilles"),
+            ("aquiles", "Achilles"),
+            ("aşil", "Achilles"),
             ("meniscus", "Knee Meniscus"),
+            ("menisco", "Knee Meniscus"),
+            ("menisküs", "Knee Meniscus"),
+            ("meniskus", "Knee Meniscus"),
             ("knee", "Knee"),
+            ("rodilla", "Knee"),
+            ("diz", "Knee"),
+            ("ayak bile", "Ankle"),
             ("ankle", "Ankle"),
+            ("tobillo", "Ankle"),
             ("great toe", "Toe"),
             ("toe", "Toe"),
             ("foot", "Foot"),
+            ("pie ", "Foot"),
             ("calf", "Calf"),
+            ("gemelo", "Calf"),
             ("hamstring", "Hamstring"),
+            ("isquiotibiales", "Hamstring"),
+            ("arka adale", "Hamstring"),
             ("quad", "Quad"),
+            ("cuádriceps", "Quad"),
             ("groin", "Groin"),
+            ("kasık", "Groin"),
             ("hip", "Hip"),
+            ("cadera", "Hip"),
+            ("abdominal", "Abdominal"),
+            ("oblicuo", "Abdominal"),
+            ("karın", "Abdominal"),
             ("back", "Back"),
+            ("espalda", "Back"),
+            ("lumbar", "Back"),
             ("shoulder", "Shoulder"),
+            ("hombro", "Shoulder"),
+            ("omuz", "Shoulder"),
             ("wrist", "Wrist"),
+            ("muñeca", "Wrist"),
             ("hand", "Hand"),
+            ("mano", "Hand"),
             ("finger", "Finger"),
+            ("dedo", "Finger"),
+            ("parmak", "Finger"),
             ("thumb", "Thumb"),
             ("concussion", "Concussion"),
+            ("conmoción", "Concussion"),
             ("illness", "Illness"),
-            ("personal", "Personal")
+            ("vírico", "Illness"),
+            ("virico", "Illness"),
+            ("gripe", "Illness"),
+            ("personal", "Personal"),
+            ("muscular", "Muscle"),
+            ("muscle", "Muscle"),
+            ("adale", "Muscle"),
+            ("esguince", "Sprain"),
+            ("fractur", "Fracture"),
+            ("kırık", "Fracture"),
+            ("surgery", "Surgery"),
+            ("operasyon", "Surgery"),
+            ("ameliyat", "Surgery")
         };
 
         foreach (var item in known)
@@ -705,4 +1178,10 @@ public partial class PlayerInjurySyncService : IPlayerInjurySyncService
 
     [GeneratedRegex(@"(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun),?\s+([A-Za-z]{3,9}\s+\d{1,2})", RegexOptions.IgnoreCase)]
     private static partial Regex CoversMonthDayRegex();
+
+    [GeneratedRegex(@"\b(injur\w*|surgery|sidelined|meniscus|dislocated|acl|achilles|sprain|fractur\w*|ruptur\w*|tear|torn|out for|ruled out|doubtful|questionable|sakat\w*|operasyon|ameliyat|menisk\w*|kırık|yırtık)\b", RegexOptions.IgnoreCase)]
+    private static partial Regex EuropeanInjuryHeadlineRegex();
+
+    [GeneratedRegex(@"(prediction\s*&\s*odds|player props|acca of|betlabel|preliminary roster|wins for|signs with|officially joins|leaves .* and joins|evaluates|takas iddiası|ayakkabı)", RegexOptions.IgnoreCase)]
+    private static partial Regex EuropeanNoiseHeadlineRegex();
 }
