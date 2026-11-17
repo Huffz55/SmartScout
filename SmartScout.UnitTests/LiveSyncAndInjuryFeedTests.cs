@@ -276,4 +276,46 @@ public class LiveSyncAndInjuryFeedTests
         var shved = new Player(1, "Alexey", "Shved", "SG", null, null, "Zenit", "VTB");
         Assert.True(WikipediaBioEnrichmentService.NameReasonablyMatches(shved, "Швед, Алексей Викторович"));
     }
+
+    [Fact]
+    public void ParseEspnRosterJson_ShouldExtractDobHeightWeightNationalityAndCollegeClassOffset()
+    {
+        string espnJson = @"{
+  ""athletes"": [
+    {
+      ""fullName"": ""Devin Carter"",
+      ""height"": 74.0,
+      ""weight"": 188.0,
+      ""position"": { ""abbreviation"": ""G"" },
+      ""birthPlace"": { ""city"": ""Miami"", ""state"": ""FL"", ""country"": ""USA"" },
+      ""dateOfBirth"": ""2002-03-18T08:00Z""
+    },
+    {
+      ""fullName"": ""Nick Arnold"",
+      ""height"": 71.0,
+      ""weight"": 175.0,
+      ""position"": { ""abbreviation"": ""G"" },
+      ""birthPlace"": { ""country"": ""Lithuania"" },
+      ""experience"": { ""abbreviation"": ""SO"" }
+    }
+  ]
+}";
+
+        var athletes = WikipediaBioEnrichmentService.ParseEspnRosterJson(espnJson, "NCAAD1", "Duke Blue Devils", "DUKE");
+
+        Assert.Equal(2, athletes.Count);
+
+        var carter = Assert.Single(athletes, a => a.NormalizedName == "devin carter");
+        Assert.Equal(188, carter.HeightCm);
+        Assert.Equal(85, carter.WeightKg);
+        Assert.Equal("USA", carter.Nationality);
+        Assert.Equal(new DateTime(2002, 3, 18, 0, 0, 0, DateTimeKind.Utc), carter.BirthDate);
+
+        var arnold = Assert.Single(athletes, a => a.NormalizedName == "nick arnold");
+        Assert.Equal(180, arnold.HeightCm);
+        Assert.Equal(79, arnold.WeightKg);
+        Assert.Equal("LTU", arnold.Nationality);
+        Assert.Null(arnold.BirthDate);
+        Assert.Equal(20, arnold.CollegeClassAgeOffset);
+    }
 }

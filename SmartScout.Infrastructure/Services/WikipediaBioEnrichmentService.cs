@@ -58,7 +58,7 @@ public partial class WikipediaBioEnrichmentService : IPlayerBioEnrichmentService
         }
 
         var targetPlayers = await query
-            .Where(p => p.BirthDate == null || p.HeightCm == null || p.WeightKg == null || p.PrimaryPosition == null || p.Nationality == null || p.Nationality == "INTL")
+            .Where(p => p.BirthDate == null || p.HeightCm == null || p.WeightKg == null || p.PrimaryPosition == null || p.Nationality == null || p.Nationality == "INTL" || p.EstimatedMarketValueTier == null)
             .OrderByDescending(p => p.SeasonStats.Any(s => s.Season >= 2026 && s.GamesPlayed >= 3) ? 1 : 0)
             .ThenByDescending(p => p.HeightCm == null ? 1 : 0)
             .ThenByDescending(p => p.League != "NCAAD1" ? 1 : 0)
@@ -75,7 +75,8 @@ public partial class WikipediaBioEnrichmentService : IPlayerBioEnrichmentService
         }
 
         var enrichedList = await EnrichPlayerBatchListAsync(targetPlayers, cancellationToken);
-        if (enrichedList.Count > 0)
+        int tierCount = await PopulateMissingMarketTiersAsync(targetPlayers, cancellationToken);
+        if (enrichedList.Count > 0 || tierCount > 0)
         {
             _cacheState?.BumpVersion();
         }
@@ -92,7 +93,7 @@ public partial class WikipediaBioEnrichmentService : IPlayerBioEnrichmentService
 
         var allNeedingEnrichment = await _dbContext.Players
             .Include(p => p.SeasonStats)
-            .Where(p => p.BirthDate == null || p.HeightCm == null || p.WeightKg == null || p.PrimaryPosition == null || p.Nationality == null || p.Nationality == "INTL")
+            .Where(p => p.BirthDate == null || p.HeightCm == null || p.WeightKg == null || p.PrimaryPosition == null || p.Nationality == null || p.Nationality == "INTL" || p.EstimatedMarketValueTier == null)
             .OrderByDescending(p => p.SeasonStats.Any(s => s.Season >= 2026 && s.GamesPlayed >= 5) ? 1 : 0)
             .ThenByDescending(p => p.BirthDate == null ? 1 : 0)
             .ThenByDescending(p => p.SeasonStats.Max(s => (int?)s.Season) ?? 0)
@@ -139,12 +140,31 @@ public partial class WikipediaBioEnrichmentService : IPlayerBioEnrichmentService
             .ToList();
 
         var enrichedList = await EnrichPlayerBatchListAsync(playersNeedingRemote, cancellationToken);
-        if (internalNormalizedCount > 0 || enrichedList.Count > 0)
+        int tierUpdated = await PopulateMissingMarketTiersAsync(allNeedingEnrichment, cancellationToken);
+        if (internalNormalizedCount > 0 || enrichedList.Count > 0 || tierUpdated > 0)
         {
             _cacheState?.BumpVersion();
         }
         int failed = Math.Max(0, totalFound - enrichedList.Count);
         return new BioEnrichmentSummaryDto(totalFound, enrichedList.Count, failed, enrichedList);
+    }
+
+    private async Task<int> PopulateMissingMarketTiersAsync(IEnumerable<Player> players, CancellationToken ct)
+    {
+        int count = 0;
+        foreach (var p in players)
+        {
+            if (string.IsNullOrWhiteSpace(p.EstimatedMarketValueTier))
+            {
+                p.UpdateScoutingIntel(estimatedMarketValueTier: ComputeEstimatedMarketValueTier(p));
+                count++;
+            }
+        }
+        if (count > 0)
+        {
+            await _dbContext.SaveChangesAsync(ct);
+        }
+        return count;
     }
 
     private async Task<List<EnrichedPlayerEntryDto>> EnrichPlayerBatchListAsync(List<Player> targetPlayers, CancellationToken cancellationToken)
@@ -194,6 +214,26 @@ public partial class WikipediaBioEnrichmentService : IPlayerBioEnrichmentService
             }
         }
 
+        // Pass 1b: Official ESPN NBA / G-League / NCAA D1 Roster JSON Feeds
+        var espnEligible = targetPlayers.Where(p => NeedsRemoteBio(p) && (
+            string.Equals(p.League, "NCAAD1", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(p.League, "NBA", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(p.League, "GLeague", StringComparison.OrdinalIgnoreCase) ||
+            p.SeasonStats.Any(s => string.Equals(s.League, "NCAAD1", StringComparison.OrdinalIgnoreCase)
+                                || string.Equals(s.League, "NBA", StringComparison.OrdinalIgnoreCase)
+                                || string.Equals(s.League, "GLeague", StringComparison.OrdinalIgnoreCase))))
+            .ToList();
+
+        if (espnEligible.Count > 0 && !cancellationToken.IsCancellationRequested)
+        {
+            var espnEnriched = await EnrichFromEspnRostersAsync(espnEligible, cancellationToken);
+            foreach (var (p, dto) in espnEnriched) TrackEnriched(p, dto);
+            if (espnEnriched.Count > 0)
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+        }
+
         // Pass 2: English Wikipedia batched wikitext lookup
         var wikiCandidates = targetPlayers.Where(NeedsRemoteBio).ToList();
         const int batchSize = 40;
@@ -215,7 +255,7 @@ public partial class WikipediaBioEnrichmentService : IPlayerBioEnrichmentService
 
         // Pass 3: Wikidata structured claims (P569 DOB + P27 citizenship + P106=Q3665646 basketball player) + Multi-lang Wikipedia sitelinks
         var wikidataCandidates = targetPlayers
-            .Where(p => p.BirthDate == null || (NeedsNationality(p) && !string.Equals(p.League, "NCAAD1", StringComparison.OrdinalIgnoreCase)))
+            .Where(p => p.BirthDate == null || NeedsNationality(p))
             .ToList();
         const int wikidataChunkSize = 120;
         for (int i = 0; i < wikidataCandidates.Count; i += wikidataChunkSize)
@@ -494,6 +534,11 @@ public partial class WikipediaBioEnrichmentService : IPlayerBioEnrichmentService
             draftYear: player.DraftYear ?? draftYear,
             draftPick: player.DraftPick ?? draftPick);
 
+        if (string.IsNullOrWhiteSpace(player.EstimatedMarketValueTier))
+        {
+            player.UpdateScoutingIntel(estimatedMarketValueTier: ComputeEstimatedMarketValueTier(player));
+        }
+
         return new EnrichedPlayerEntryDto(
             FullName: player.FullName,
             League: player.League,
@@ -610,6 +655,281 @@ public partial class WikipediaBioEnrichmentService : IPlayerBioEnrichmentService
         }
 
         return (index, byDobLast);
+    }
+
+    internal sealed record EspnRosterAthlete(
+        string NormalizedName,
+        string LeagueCode,
+        string TeamName,
+        string TeamAbbr,
+        DateTime? BirthDate,
+        int? CollegeClassAgeOffset,
+        int? HeightCm,
+        string? HeightStr,
+        int? WeightKg,
+        int? WeightPounds,
+        string? Position,
+        string? Nationality);
+
+    private static readonly ConcurrentDictionary<string, (DateTime FetchedAtUtc, Dictionary<string, List<EspnRosterAthlete>> Index)> EspnLeagueRosterCache = new(StringComparer.OrdinalIgnoreCase);
+
+    internal static string ComputeEstimatedMarketValueTier(Player player)
+    {
+        if (string.Equals(player.League, "NCAAD1", StringComparison.OrdinalIgnoreCase))
+            return "NCAA D1 Prospect (Collegiate / NIL)";
+
+        decimal bestEti = player.SeasonStats.Any()
+            ? player.SeasonStats.Max(s => s.EuroLeagueTransitionIndex ?? 0m)
+            : 0m;
+
+        if (string.Equals(player.League, "NBA", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(player.League, "EuroLeague", StringComparison.OrdinalIgnoreCase) ||
+            bestEti >= 82m)
+            return "Tier-1 ($750k+ Core / Impact)";
+
+        if (bestEti >= 68m)
+            return "Tier-2 ($250k - $750k Potential Jump)";
+
+        return "Tier-3 ($120k - $350k Emerging Talent)";
+    }
+
+    internal static List<EspnRosterAthlete> ParseEspnRosterJson(string json, string leagueCode, string teamName, string teamAbbr)
+    {
+        var list = new List<EspnRosterAthlete>();
+        if (string.IsNullOrWhiteSpace(json)) return list;
+
+        using var doc = JsonDocument.Parse(json);
+        if (!doc.RootElement.TryGetProperty("athletes", out var athletes) || athletes.ValueKind != JsonValueKind.Array)
+            return list;
+
+        foreach (var a in athletes.EnumerateArray())
+        {
+            string fullName = a.TryGetProperty("fullName", out var fn) ? (fn.GetString() ?? "") : "";
+            string norm = Player.NormalizeName(fullName, string.Empty);
+            if (string.IsNullOrWhiteSpace(norm) || !norm.Contains(' ')) continue;
+
+            int? heightCm = null;
+            string? heightStr = null;
+            if (a.TryGetProperty("height", out var hp) && hp.ValueKind == JsonValueKind.Number && hp.TryGetDouble(out double inches) && inches >= 62 && inches <= 95)
+            {
+                heightCm = (int)Math.Round(inches * 2.54);
+                int roundIn = (int)Math.Round(inches);
+                heightStr = $"{roundIn / 12}-{roundIn % 12}";
+            }
+
+            int? weightKg = null;
+            int? weightLbs = null;
+            if (a.TryGetProperty("weight", out var wp) && wp.ValueKind == JsonValueKind.Number && wp.TryGetDouble(out double lbs) && lbs >= 120 && lbs <= 390)
+            {
+                weightLbs = (int)Math.Round(lbs);
+                weightKg = (int)Math.Round(lbs * 0.45359237);
+            }
+
+            string? pos = null;
+            if (a.TryGetProperty("position", out var pp) && pp.ValueKind == JsonValueKind.Object && pp.TryGetProperty("abbreviation", out var abbr))
+            {
+                pos = abbr.GetString()?.Trim();
+            }
+
+            string? nat = null;
+            if (a.TryGetProperty("citizenship", out var cit) && cit.ValueKind == JsonValueKind.String)
+            {
+                nat = NormalizeCountryOrCode(null, cit.GetString());
+            }
+            if (nat == null && a.TryGetProperty("birthPlace", out var bp) && bp.ValueKind == JsonValueKind.Object)
+            {
+                string? country = bp.TryGetProperty("country", out var cp) ? cp.GetString() : null;
+                nat = NormalizeCountryOrCode(null, country);
+                if (nat == null && bp.TryGetProperty("state", out var st) && !string.IsNullOrWhiteSpace(st.GetString()) && string.Equals(country, "USA", StringComparison.OrdinalIgnoreCase))
+                {
+                    nat = "USA";
+                }
+            }
+
+            DateTime? dob = null;
+            if (a.TryGetProperty("dateOfBirth", out var dobEl) && dobEl.ValueKind == JsonValueKind.String &&
+                DateTimeOffset.TryParse(dobEl.GetString(), CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var dto))
+            {
+                dob = DateTime.SpecifyKind(dto.UtcDateTime.Date, DateTimeKind.Utc);
+            }
+
+            int? classAgeOffset = null;
+            if (!dob.HasValue && a.TryGetProperty("experience", out var exp) && exp.ValueKind == JsonValueKind.Object &&
+                exp.TryGetProperty("abbreviation", out var expAbbr))
+            {
+                classAgeOffset = expAbbr.GetString()?.Trim().ToUpperInvariant() switch
+                {
+                    "FR" => 19,
+                    "SO" => 20,
+                    "JR" => 21,
+                    "SR" => 22,
+                    "GR" => 23,
+                    _ => null
+                };
+            }
+
+            list.Add(new EspnRosterAthlete(norm, leagueCode, teamName, teamAbbr, dob, classAgeOffset, heightCm, heightStr, weightKg, weightLbs, pos, nat));
+        }
+
+        return list;
+    }
+
+    private async Task<List<(Player Player, EnrichedPlayerEntryDto Dto)>> EnrichFromEspnRostersAsync(List<Player> candidates, CancellationToken ct)
+    {
+        var enriched = new List<(Player, EnrichedPlayerEntryDto)>();
+
+        bool needNba = candidates.Any(p => string.Equals(p.League, "NBA", StringComparison.OrdinalIgnoreCase) || p.SeasonStats.Any(s => string.Equals(s.League, "NBA", StringComparison.OrdinalIgnoreCase)));
+        bool needGl = candidates.Any(p => string.Equals(p.League, "GLeague", StringComparison.OrdinalIgnoreCase) || p.SeasonStats.Any(s => string.Equals(s.League, "GLeague", StringComparison.OrdinalIgnoreCase)));
+        bool needNcaa = candidates.Any(p => string.Equals(p.League, "NCAAD1", StringComparison.OrdinalIgnoreCase) || p.SeasonStats.Any(s => string.Equals(s.League, "NCAAD1", StringComparison.OrdinalIgnoreCase)));
+
+        var indexes = new Dictionary<string, Dictionary<string, List<EspnRosterAthlete>>>(StringComparer.OrdinalIgnoreCase);
+        if (needNba) indexes["NBA"] = await GetOrBuildEspnIndexAsync("NBA", "nba", 40, ct);
+        if (needGl) indexes["GLeague"] = await GetOrBuildEspnIndexAsync("GLeague", "nba-development", 60, ct);
+        if (needNcaa) indexes["NCAAD1"] = await GetOrBuildEspnIndexAsync("NCAAD1", "mens-college-basketball", 500, ct);
+
+        foreach (var p in candidates)
+        {
+            string? key = Player.NormalizeName(p.FirstName, p.LastName);
+            if (string.IsNullOrWhiteSpace(key)) key = p.NormalizedName;
+            if (string.IsNullOrWhiteSpace(key)) continue;
+
+            var preferredOrder = new[] { p.League, "NBA", "GLeague", "NCAAD1" }.Distinct(StringComparer.OrdinalIgnoreCase);
+            EspnRosterAthlete? matched = null;
+
+            foreach (var lg in preferredOrder)
+            {
+                if (!indexes.TryGetValue(lg, out var idx) || !idx.TryGetValue(key, out var pool) || pool.Count == 0)
+                    continue;
+
+                if (pool.Count == 1)
+                {
+                    matched = pool[0];
+                    break;
+                }
+
+                string pTeam = (p.TeamName ?? string.Empty).Trim();
+                matched = pool.FirstOrDefault(a =>
+                    (!string.IsNullOrWhiteSpace(pTeam) &&
+                     (a.TeamName.Contains(pTeam, StringComparison.OrdinalIgnoreCase) ||
+                      pTeam.Contains(a.TeamName, StringComparison.OrdinalIgnoreCase) ||
+                      string.Equals(a.TeamAbbr, pTeam, StringComparison.OrdinalIgnoreCase))));
+                if (matched != null) break;
+            }
+
+            if (matched == null) continue;
+
+            DateTime? dobToApply = matched.BirthDate;
+            if (!dobToApply.HasValue && p.BirthDate == null && matched.CollegeClassAgeOffset.HasValue)
+            {
+                bool isNcaaPlayer = string.Equals(p.League, "NCAAD1", StringComparison.OrdinalIgnoreCase)
+                    || p.SeasonStats.Any(s => string.Equals(s.League, "NCAAD1", StringComparison.OrdinalIgnoreCase) && s.Season >= 2024);
+                if (isNcaaPlayer)
+                {
+                    int currentCollegeSeason = 2027;
+                    dobToApply = new DateTime(currentCollegeSeason - matched.CollegeClassAgeOffset.Value, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+                }
+            }
+
+            var dto = TryApplyBioUpdate(p, dobToApply, matched.HeightCm, matched.WeightKg, matched.WeightPounds, matched.Position, matched.Nationality, null, null, matched.HeightStr);
+            if (dto != null)
+            {
+                enriched.Add((p, dto));
+            }
+        }
+
+        return enriched;
+    }
+
+    private async Task<Dictionary<string, List<EspnRosterAthlete>>> GetOrBuildEspnIndexAsync(string leagueCode, string espnSlug, int teamLimit, CancellationToken ct)
+    {
+        if (EspnLeagueRosterCache.TryGetValue(leagueCode, out var cached) &&
+            (DateTime.UtcNow - cached.FetchedAtUtc) < TimeSpan.FromMinutes(30))
+        {
+            return cached.Index;
+        }
+
+        var index = new ConcurrentDictionary<string, List<EspnRosterAthlete>>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            string teamsUrl = $"https://site.api.espn.com/apis/site/v2/sports/basketball/{espnSlug}/teams?limit={teamLimit}";
+            using var teamsResp = await SendEspnGetAsync(teamsUrl, ct);
+            if (!teamsResp.IsSuccessStatusCode) return new Dictionary<string, List<EspnRosterAthlete>>(StringComparer.OrdinalIgnoreCase);
+
+            var teamsJson = await teamsResp.Content.ReadAsStringAsync(ct);
+            var teams = new List<(string Id, string Name, string Abbr)>();
+
+            using (var doc = JsonDocument.Parse(teamsJson))
+            {
+                if (doc.RootElement.TryGetProperty("sports", out var sports) && sports.GetArrayLength() > 0 &&
+                    sports[0].TryGetProperty("leagues", out var leagues) && leagues.GetArrayLength() > 0 &&
+                    leagues[0].TryGetProperty("teams", out var tArr))
+                {
+                    foreach (var item in tArr.EnumerateArray())
+                    {
+                        if (!item.TryGetProperty("team", out var tObj)) continue;
+                        string id = tObj.TryGetProperty("id", out var idEl) ? (idEl.GetString() ?? "") : "";
+                        string name = tObj.TryGetProperty("displayName", out var nmEl) ? (nmEl.GetString() ?? "") : "";
+                        string abbr = tObj.TryGetProperty("abbreviation", out var abEl) ? (abEl.GetString() ?? "") : "";
+                        if (!string.IsNullOrWhiteSpace(id))
+                            teams.Add((id, name, abbr));
+                    }
+                }
+            }
+
+            using var throttle = new SemaphoreSlim(10);
+            var tasks = teams.Select(async t =>
+            {
+                await throttle.WaitAsync(ct);
+                try
+                {
+                    string rUrl = $"https://site.api.espn.com/apis/site/v2/sports/basketball/{espnSlug}/teams/{t.Id}/roster";
+                    using var resp = await SendEspnGetAsync(rUrl, ct);
+                    if (!resp.IsSuccessStatusCode) return;
+                    var rJson = await resp.Content.ReadAsStringAsync(ct);
+                    var athletes = ParseEspnRosterJson(rJson, leagueCode, t.Name, t.Abbr);
+                    foreach (var ath in athletes)
+                    {
+                        index.AddOrUpdate(
+                            ath.NormalizedName,
+                            _ => new List<EspnRosterAthlete> { ath },
+                            (_, existing) =>
+                            {
+                                lock (existing) { existing.Add(ath); }
+                                return existing;
+                            });
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.LogDebug(ex, "ESPN roster fetch skipped for {League} team {TeamId}", leagueCode, t.Id);
+                }
+                finally
+                {
+                    throttle.Release();
+                }
+            });
+
+            await Task.WhenAll(tasks);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "ESPN team directory fetch failed for {League}", leagueCode);
+        }
+
+        var finalDict = index.ToDictionary(k => k.Key, v => v.Value, StringComparer.OrdinalIgnoreCase);
+        if (finalDict.Count > 0)
+        {
+            EspnLeagueRosterCache[leagueCode] = (DateTime.UtcNow, finalDict);
+        }
+        return finalDict;
+    }
+
+    private Task<HttpResponseMessage> SendEspnGetAsync(string url, CancellationToken ct)
+    {
+        var req = new HttpRequestMessage(HttpMethod.Get, url);
+        req.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+        req.Headers.TryAddWithoutValidation("Accept", "application/json");
+        return _httpClient.SendAsync(req, ct);
     }
 
     private async Task<List<(Player Player, EnrichedPlayerEntryDto Dto)>> EnrichFromWikidataAsync(List<Player> players, CancellationToken ct)
