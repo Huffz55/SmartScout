@@ -1057,35 +1057,100 @@ public partial class WikipediaBioEnrichmentService : IPlayerBioEnrichmentService
         return null;
     }
 
-    private static ParsedPlayerBio ParseLocalizedWikitextBio(string wikitext)
+    internal static ParsedPlayerBio ParseLocalizedWikitextBio(string wikitext)
     {
         var baseBio = ParseWikitextBio(wikitext);
-        if (baseBio.BirthDate.HasValue) return baseBio;
 
-        // Handle localized templates like {{Fecha de nacimiento|DD|MM|YYYY}}, {{Date de naissance|DD|MM|YYYY}}, {{Doğum tarihi ve yaşı|YYYY|MM|DD}}, {{Geburtsdatum|...}}
-        DateTime? localDob = null;
-        var ymd = Regex.Match(wikitext, @"(?:birth_date|fecha(?: de)? nacimiento|date de naissance|data di nascita|do[gğ]um tarihi|datum ro[dđ]enja|gimimo data)[^=\n]*=\s*(?:\{\{[^|{}]+\|)?(?:(?:df|mf)=\w+\|)?(\d{4})\|(\d{1,2})\|(\d{1,2})", RegexOptions.IgnoreCase);
-        if (ymd.Success && int.TryParse(ymd.Groups[1].Value, out int y) && int.TryParse(ymd.Groups[2].Value, out int m) && int.TryParse(ymd.Groups[3].Value, out int d))
-        {
-            if (y >= 1975 && y <= 2011 && m >= 1 && m <= 12 && d >= 1 && d <= 31)
-            {
-                try { localDob = new DateTime(y, m, d, 0, 0, 0, DateTimeKind.Utc); } catch { }
-            }
-        }
-
+        DateTime? localDob = baseBio.BirthDate;
         if (!localDob.HasValue)
         {
-            var dmy = Regex.Match(wikitext, @"\{\{(?:Fecha de nacimiento|Date de naissance|Datum ro[dđ]enja|Geburtsdatum)[^|{}]*\|(\d{1,2})\|(\d{1,2})\|(\d{4})", RegexOptions.IgnoreCase);
-            if (dmy.Success && int.TryParse(dmy.Groups[1].Value, out int dd) && int.TryParse(dmy.Groups[2].Value, out int mm) && int.TryParse(dmy.Groups[3].Value, out int yy))
+            // Localized templates & fields (YYYY|MM|DD or DD|MM|YYYY or DD.MM.YYYY)
+            var ymd = Regex.Match(wikitext, @"(?:birth_date|fecha(?: de)? nacimiento|date de naissance|data di nascita|do[gğ]um tarihi|datum ro[dđ]enja|gimimo data|дата рождения)[^=\n]*=\s*(?:\{\{[^|{}]+\|)?(?:(?:df|mf)=\w+\|)?(\d{4})\|(\d{1,2})\|(\d{1,2})", RegexOptions.IgnoreCase);
+            if (ymd.Success && int.TryParse(ymd.Groups[1].Value, out int y) && int.TryParse(ymd.Groups[2].Value, out int m) && int.TryParse(ymd.Groups[3].Value, out int d))
             {
-                if (yy >= 1975 && yy <= 2011 && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31)
+                localDob = TryBuildUtcDate(y, m, d);
+            }
+
+            if (!localDob.HasValue)
+            {
+                var dmy = Regex.Match(wikitext, @"\{\{(?:Fecha(?: de nacimiento)?|Edad|Date de naissance|Datum ro[dđ]enja|Geburtsdatum|ДатаРождения|ДР|Do[gğ]um tarihi[^|{}]*)[^|{}]*\|(\d{1,4})\|(\d{1,2})\|(\d{1,4})", RegexOptions.IgnoreCase);
+                if (dmy.Success && int.TryParse(dmy.Groups[1].Value, out int p1) && int.TryParse(dmy.Groups[2].Value, out int p2) && int.TryParse(dmy.Groups[3].Value, out int p3))
                 {
-                    try { localDob = new DateTime(yy, mm, dd, 0, 0, 0, DateTimeKind.Utc); } catch { }
+                    localDob = p1 >= 1970 ? TryBuildUtcDate(p1, p2, p3) : TryBuildUtcDate(p3, p2, p1);
+                }
+            }
+
+            if (!localDob.HasValue)
+            {
+                var ruDotted = Regex.Match(wikitext, @"(?:дата рождения|geburtsdatum|data di nascita)\s*=\s*(\d{1,2})\.(\d{1,2})\.(\d{4})", RegexOptions.IgnoreCase);
+                if (ruDotted.Success && int.TryParse(ruDotted.Groups[1].Value, out int dd) && int.TryParse(ruDotted.Groups[2].Value, out int mm) && int.TryParse(ruDotted.Groups[3].Value, out int yy))
+                {
+                    localDob = TryBuildUtcDate(yy, mm, dd);
                 }
             }
         }
 
-        return baseBio with { BirthDate = localDob };
+        string? localNat = baseBio.Nationality ?? ExtractLocalizedNationality(wikitext);
+        int? localHeight = baseBio.HeightCm;
+        string? localHeightStr = baseBio.HeightStr;
+        if (!localHeight.HasValue)
+        {
+            var mLocH = Regex.Match(wikitext, @"\|\s*(?:altura|statura|taille|gr[öo][ßs]e|рост|boy)\s*=\s*(?:ca\.?\s*)?([12][.,]\d{2}|\d{3})\s*(?:m|cm|см)?", RegexOptions.IgnoreCase);
+            if (mLocH.Success && decimal.TryParse(mLocH.Groups[1].Value.Replace(',', '.'), NumberStyles.Any, CultureInfo.InvariantCulture, out decimal hVal))
+            {
+                int cm = hVal < 3.0m ? (int)Math.Round(hVal * 100m) : (int)Math.Round(hVal);
+                if (cm >= 160 && cm <= 240)
+                {
+                    localHeight = cm;
+                    int totalInches = (int)Math.Round(cm / 2.54);
+                    localHeightStr ??= $"{totalInches / 12}-{totalInches % 12}";
+                }
+            }
+        }
+
+        int? localWeightKg = baseBio.WeightKg;
+        int? localWeightLbs = baseBio.WeightPounds;
+        if (!localWeightKg.HasValue)
+        {
+            var mLocW = Regex.Match(wikitext, @"\|\s*(?:peso|poids|gewicht|вес|kilo)\s*=\s*(\d{2,3})\s*(?:kg|кг)?", RegexOptions.IgnoreCase);
+            if (mLocW.Success && int.TryParse(mLocW.Groups[1].Value, out int kg) && kg >= 55 && kg <= 180)
+            {
+                localWeightKg = kg;
+                localWeightLbs ??= (int)Math.Round(kg / 0.45359237);
+            }
+        }
+
+        return baseBio with
+        {
+            BirthDate = localDob,
+            Nationality = localNat,
+            HeightCm = localHeight,
+            HeightStr = localHeightStr,
+            WeightKg = localWeightKg,
+            WeightPounds = localWeightLbs
+        };
+    }
+
+    private static DateTime? TryBuildUtcDate(int year, int month, int day)
+    {
+        if (year < 1975 || year > 2011 || month < 1 || month > 12 || day < 1 || day > 31)
+            return null;
+        try { return new DateTime(year, month, day, 0, 0, 0, DateTimeKind.Utc); }
+        catch { return null; }
+    }
+
+    private static string? ExtractLocalizedNationality(string wikitext)
+    {
+        var codes = ParseNationalityTokens(
+            wikitext,
+            @"\|\s*(?:nationality|nacionalidad|nazionalit[àa]|nationalit[eé]|nationalit[äa]t|staatsangeh[öo]rigkeit|uyruk|milliyet|vatanda[şs]l[ıi]k|гражданство|dr[žz]avljanstvo|tautyb[ėe]|pilietyb[ėe]|nazione)\s*=\s*(.+?)(?:\r|\n)");
+        if (codes.Count > 0) return string.Join(" / ", codes.Take(2));
+
+        var itBio = Regex.Match(wikitext, @"\|\s*Nazionalit[àa]\s*=\s*([A-Za-zÀ-ÿ\s]+)", RegexOptions.IgnoreCase);
+        if (itBio.Success && CountryToIsoMap.TryGetValue(itBio.Groups[1].Value.Trim(), out var itIso))
+            return itIso;
+
+        return null;
     }
 
     internal static ParsedPlayerBio ParseBasketballReferencePlayerPage(string html)
@@ -1143,15 +1208,55 @@ public partial class WikipediaBioEnrichmentService : IPlayerBioEnrichmentService
         return list.ToArray();
     }
 
-    private static bool NameReasonablyMatches(Player player, string candidateLabel)
+    internal static bool NameReasonablyMatches(Player player, string candidateLabel)
     {
         var pNorm = Player.NormalizeName(player.FirstName, player.LastName);
-        var cNorm = Player.NormalizeName(candidateLabel, string.Empty);
+        var latinizedCandidate = ContainsCyrillic(candidateLabel)
+            ? TransliterateCyrillicToLatin(candidateLabel)
+            : candidateLabel;
+        var cNorm = Player.NormalizeName(latinizedCandidate, string.Empty);
+
         if (string.IsNullOrWhiteSpace(pNorm) || string.IsNullOrWhiteSpace(cNorm)) return false;
         if (string.Equals(pNorm, cNorm, StringComparison.OrdinalIgnoreCase)) return true;
+
         var lastNorm = Player.NormalizeName(player.LastName, string.Empty);
-        return lastNorm.Length >= 3 && cNorm.Contains(lastNorm, StringComparison.OrdinalIgnoreCase) &&
-               (pNorm[0] == cNorm[0]);
+        var firstNorm = Player.NormalizeName(player.FirstName, string.Empty);
+        if (lastNorm.Length >= 3 && cNorm.Contains(lastNorm, StringComparison.OrdinalIgnoreCase))
+        {
+            // Support "First Last" or Russian "Last First" order when first initial matches
+            var tokens = cNorm.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (tokens.Any(t => firstNorm.Length > 0 && t[0] == firstNorm[0] && t != lastNorm) || pNorm[0] == cNorm[0])
+                return true;
+        }
+        return false;
+    }
+
+    private static bool ContainsCyrillic(string s)
+    {
+        foreach (char c in s)
+        {
+            if (c >= '\u0400' && c <= '\u04FF') return true;
+        }
+        return false;
+    }
+
+    private static string TransliterateCyrillicToLatin(string text)
+    {
+        var sb = new System.Text.StringBuilder(text.Length * 2);
+        foreach (char c in text.ToLowerInvariant())
+        {
+            sb.Append(c switch
+            {
+                'а' => "a", 'б' => "b", 'в' => "v", 'г' => "g", 'д' => "d", 'е' => "e", 'ё' => "e",
+                'ж' => "zh", 'з' => "z", 'и' => "i", 'й' => "y", 'к' => "k", 'л' => "l", 'м' => "m",
+                'н' => "n", 'о' => "o", 'п' => "p", 'р' => "r", 'с' => "s", 'т' => "t", 'у' => "u",
+                'ф' => "f", 'х' => "kh", 'ц' => "ts", 'ч' => "ch", 'ш' => "sh", 'щ' => "shch",
+                'ъ' => "", 'ы' => "y", 'ь' => "", 'э' => "e", 'ю' => "yu", 'я' => "ya",
+                'ђ' => "dj", 'ј' => "j", 'љ' => "lj", 'њ' => "nj", 'ћ' => "c", 'џ' => "dz",
+                _ => c.ToString()
+            });
+        }
+        return sb.ToString();
     }
 
     private static IReadOnlyList<string> GetWikiLanguagesForLeague(string? league) => league?.ToUpperInvariant() switch
@@ -1500,7 +1605,19 @@ public partial class WikipediaBioEnrichmentService : IPlayerBioEnrichmentService
         ["jordan"] = "JOR", ["jordanian"] = "JOR",
         ["gabon"] = "GAB", ["gabonese"] = "GAB",
         ["cape verde"] = "CPV", ["cabo verde"] = "CPV",
-        ["south africa"] = "RSA", ["guinea"] = "GUI"
+        ["south africa"] = "RSA", ["guinea"] = "GUI",
+        // Localized Wikipedia nationalities (ES, IT, FR, DE, TR, RU)
+        ["españa"] = "ESP", ["espana"] = "ESP", ["español"] = "ESP", ["española"] = "ESP", ["spagna"] = "ESP", ["spanien"] = "ESP",
+        ["estados unidos"] = "USA", ["ee.uu."] = "USA", ["eeuu"] = "USA", ["stati uniti"] = "USA", ["états-unis"] = "USA", ["vereinigte staaten"] = "USA", ["abd"] = "USA", ["сша"] = "USA",
+        ["italia"] = "ITA", ["italiano"] = "ITA", ["italiana"] = "ITA", ["italien"] = "ITA", ["italyan"] = "ITA", ["италия"] = "ITA",
+        ["francia"] = "FRA", ["frankreich"] = "FRA", ["fransız"] = "FRA", ["франция"] = "FRA",
+        ["alemania"] = "GER", ["germania"] = "GER", ["deutschland"] = "GER", ["deutsch"] = "GER", ["alman"] = "GER", ["almanya"] = "GER", ["германия"] = "GER",
+        ["turquía"] = "TUR", ["turchia"] = "TUR", ["türkei"] = "TUR", ["türk"] = "TUR", ["турция"] = "TUR",
+        ["rusia"] = "RUS", ["russland"] = "RUS", ["россия"] = "RUS", ["беларусь"] = "BLR", ["белоруссия"] = "BLR",
+        ["ukraina"] = "UKR", ["ucrania"] = "UKR", ["украина"] = "UKR", ["сербия"] = "SRB", ["србија"] = "SRB",
+        ["grecia"] = "GRE", ["griechenland"] = "GRE", ["греция"] = "GRE", ["croacia"] = "CRO", ["croazia"] = "CRO", ["kroatien"] = "CRO",
+        ["lituania"] = "LTU", ["lietuva"] = "LTU", ["litauen"] = "LTU", ["литва"] = "LTU", ["letonia"] = "LAT", ["latvija"] = "LAT", ["латвия"] = "LAT",
+        ["georgia_ru"] = "GEO", ["грузия"] = "GEO", ["эстония"] = "EST", ["reino unido"] = "GBR", ["regno unito"] = "GBR"
     };
 
     private static readonly Dictionary<string, string> Iso2ToIso3Map = new(StringComparer.OrdinalIgnoreCase)
@@ -1616,7 +1733,7 @@ public partial class WikipediaBioEnrichmentService : IPlayerBioEnrichmentService
     {
         raw = Regex.Replace(raw, @"<ref[^>]*>.*?</ref>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
         raw = Regex.Replace(raw, @"<ref[^/>]*/?>", "", RegexOptions.IgnoreCase);
-        raw = Regex.Replace(raw, @"\{\{(?:flag(?:u|icon|country)?|bk(?:-rt)?)\|([^}|]+)(?:\|[^}]*)?\}\}", "$1", RegexOptions.IgnoreCase);
+        raw = Regex.Replace(raw, @"\{\{(?:flag(?:u|icon|country)?|bk(?:-rt)?|bandera|bandiera|drapeau|bayrak|флагификация|флаг)\|([^}|]+)(?:\|[^}]*)?\}\}", "$1", RegexOptions.IgnoreCase);
         raw = Regex.Replace(raw, @"\[\[(?:[^\]|]*\|)?([^\]]*)\]\]", "$1");
         return raw.Replace("{{", "").Replace("}}", "");
     }

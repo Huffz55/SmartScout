@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using SmartScout.Application.DTOs;
 using SmartScout.Application.Services;
+using SmartScout.Domain.Entities;
 using SmartScout.Infrastructure.Options;
 using SmartScout.Infrastructure.Services;
 using Xunit;
@@ -241,5 +242,38 @@ public class LiveSyncAndInjuryFeedTests
         Assert.Equal("Surgery", osman.InjuryType);
 
         Assert.DoesNotContain(records, r => r.PlayerName == "luka scuka");
+    }
+
+    [Fact]
+    public void ParseLocalizedWikitextBio_ShouldExtractSpanishItalianRussianFieldsAndMatchCyrillicTitle()
+    {
+        string esWikitext = @"
+{{Ficha de deportista
+| nacionalidad = {{bandera|España}}
+| fecha de nacimiento = {{fecha de nacimiento|15|04|2002}}
+| altura = 1,98 m
+| peso = 92 kg
+}}";
+        var esBio = WikipediaBioEnrichmentService.ParseLocalizedWikitextBio(esWikitext);
+        Assert.Equal(new DateTime(2002, 4, 15, 0, 0, 0, DateTimeKind.Utc), esBio.BirthDate);
+        Assert.Equal("ESP", esBio.Nationality);
+        Assert.Equal(198, esBio.HeightCm);
+        Assert.Equal(92, esBio.WeightKg);
+
+        string ruWikitext = @"
+{{Баскетболист
+| Гражданство = {{Флагификация|Россия}}
+| Дата рождения = {{ДатаРождения|16|12|1988}}
+| Рост = 198 см
+| Вес = 86 кг
+}}";
+        var ruBio = WikipediaBioEnrichmentService.ParseLocalizedWikitextBio(ruWikitext);
+        Assert.Equal(new DateTime(1988, 12, 16, 0, 0, 0, DateTimeKind.Utc), ruBio.BirthDate);
+        Assert.Equal("RUS", ruBio.Nationality);
+        Assert.Equal(198, ruBio.HeightCm);
+        Assert.Equal(86, ruBio.WeightKg);
+
+        var shved = new Player(1, "Alexey", "Shved", "SG", null, null, "Zenit", "VTB");
+        Assert.True(WikipediaBioEnrichmentService.NameReasonablyMatches(shved, "Швед, Алексей Викторович"));
     }
 }
