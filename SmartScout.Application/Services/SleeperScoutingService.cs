@@ -784,6 +784,25 @@ public class SleeperScoutingService : ISleeperScoutingService
         return TeamNameMap.TryGetValue(code.Trim(), out var fullName) ? fullName : code;
     }
 
+    public static IReadOnlyList<string> GetTeamNameVariants(string? team)
+    {
+        if (string.IsNullOrWhiteSpace(team)) return Array.Empty<string>();
+        string trimmed = team.Trim();
+        var variants = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { trimmed };
+        if (TeamNameMap.TryGetValue(trimmed, out var full))
+        {
+            variants.Add(full);
+        }
+        foreach (var kvp in TeamNameMap)
+        {
+            if (string.Equals(kvp.Value, trimmed, StringComparison.OrdinalIgnoreCase))
+            {
+                variants.Add(kvp.Key);
+            }
+        }
+        return variants.ToList();
+    }
+
     private static (string resolvedTeam, string? parentTeam, bool isTwoWay) ResolveTeamDisplay(
         PlayerSeasonStat stat,
         Player player,

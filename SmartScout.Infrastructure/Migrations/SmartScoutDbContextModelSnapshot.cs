@@ -540,6 +540,59 @@ namespace SmartScout.Infrastructure.Migrations
                     b.ToTable("SeasonStats");
                 });
 
+            modelBuilder.Entity("SmartScout.Domain.Entities.ScoutBoard", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("OwnerName")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("ScoutBoards");
+                });
+
+            modelBuilder.Entity("SmartScout.Domain.Entities.ScoutBoardEntry", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("AddedAt")
+                        .HasColumnType("timestamp without time zone");
+
+                    b.Property<Guid>("BoardId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<Guid>("PlayerId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PlayerId");
+
+                    b.HasIndex("BoardId", "PlayerId")
+                        .IsUnique();
+
+                    b.ToTable("ScoutBoardEntries");
+                });
+
             modelBuilder.Entity("SmartScout.Domain.Entities.PlayerInjury", b =>
                 {
                     b.HasOne("SmartScout.Domain.Entities.Player", "Player")
@@ -562,11 +615,35 @@ namespace SmartScout.Infrastructure.Migrations
                     b.Navigation("Player");
                 });
 
+            modelBuilder.Entity("SmartScout.Domain.Entities.ScoutBoardEntry", b =>
+                {
+                    b.HasOne("SmartScout.Domain.Entities.ScoutBoard", "Board")
+                        .WithMany("Entries")
+                        .HasForeignKey("BoardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SmartScout.Domain.Entities.Player", "Player")
+                        .WithMany()
+                        .HasForeignKey("PlayerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Board");
+
+                    b.Navigation("Player");
+                });
+
             modelBuilder.Entity("SmartScout.Domain.Entities.Player", b =>
                 {
                     b.Navigation("Injuries");
 
                     b.Navigation("SeasonStats");
+                });
+
+            modelBuilder.Entity("SmartScout.Domain.Entities.ScoutBoard", b =>
+                {
+                    b.Navigation("Entries");
                 });
 #pragma warning restore 612, 618
         }

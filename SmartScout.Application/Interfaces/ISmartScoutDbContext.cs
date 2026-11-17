@@ -13,6 +13,8 @@ public interface ISmartScoutDbContext
     DbSet<BasketballLeague> Leagues { get; }
     DbSet<BasketballSeason> Seasons { get; }
     DbSet<IngestionJobLog> IngestionJobLogs { get; }
+    DbSet<ScoutBoard> ScoutBoards { get; }
+    DbSet<ScoutBoardEntry> ScoutBoardEntries { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }

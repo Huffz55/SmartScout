@@ -5,6 +5,7 @@ using SmartScout.Application.DTOs;
 using SmartScout.Application.Interfaces;
 using System;
 using System.Globalization;
+using System.Linq;
 
 namespace SmartScout.Infrastructure.Services.Reporting;
 
@@ -45,6 +46,155 @@ public class QuestPdfScoutingReportGenerator : IScoutingReportGenerator
             CultureInfo.CurrentCulture = prevCulture;
             CultureInfo.CurrentUICulture = prevUiCulture;
         }
+    }
+
+    public byte[] GenerateComparisonPdf(PlayerComparisonDto model)
+    {
+        var prevCulture = CultureInfo.CurrentCulture;
+        var prevUiCulture = CultureInfo.CurrentUICulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+            CultureInfo.CurrentUICulture = CultureInfo.InvariantCulture;
+
+            var pA = model.PlayerA;
+            var pB = model.PlayerB;
+
+            var document = Document.Create(container =>
+            {
+                container.Page(page =>
+                {
+                    page.Size(PageSizes.A4);
+                    page.Margin(28);
+                    page.DefaultTextStyle(x => x.FontSize(8.5f).FontFamily("Lato"));
+
+                    page.Header().Row(row =>
+                    {
+                        row.RelativeItem().Column(c =>
+                        {
+                            c.Item().Text("SMARTSCOUT HEAD-TO-HEAD COMPARISON DOSSIER").FontSize(14).Bold().FontColor(Color.FromHex("#0F172A"));
+                            c.Item().Text($"{pA.FullName} vs. {pB.FullName} • Profile Similarity: {model.SimilarityScore.ToString("F1", CultureInfo.InvariantCulture)}%").FontSize(8.5f).SemiBold().FontColor(Color.FromHex("#2563EB"));
+                        });
+                        row.ConstantItem(120).AlignRight().Column(c =>
+                        {
+                            c.Item().Text("EXECUTIVE BENCHMARK").FontSize(7.5f).Bold().FontColor(Color.FromHex("#DC2626"));
+                            c.Item().Text($"Generated: {DateTime.UtcNow:yyyy-MM-dd}").FontSize(7.5f).FontColor(Colors.Grey.Medium);
+                        });
+                    });
+
+                    page.Content().PaddingVertical(8).Column(col =>
+                    {
+                        // Hero Comparison Row
+                        col.Item().Row(row =>
+                        {
+                            ComposeComparisonHeroCard(row.RelativeItem(), pA, "#1E1B4B", "#818CF8", "PLAYER A (TARGET)");
+                            row.ConstantItem(8);
+                            ComposeComparisonHeroCard(row.RelativeItem(), pB, "#064E3B", "#34D399", "PLAYER B (BENCHMARK)");
+                        });
+
+                        col.Item().Height(6);
+
+                        // Verdict Box
+                        col.Item().Background(Color.FromHex("#F8FAFC")).Border(1).BorderColor(Color.FromHex("#2563EB")).Padding(7).Column(c =>
+                        {
+                            c.Item().Text("EXECUTIVE HEAD-TO-HEAD TRANSFER VERDICT").FontSize(8f).Bold().FontColor(Color.FromHex("#2563EB"));
+                            c.Item().PaddingTop(2).Text(model.ScoutingVerdict).FontSize(7.8f).FontColor(Color.FromHex("#1E293B"));
+                        });
+
+                        col.Item().Height(6);
+
+                        // Tale of the Tape Table
+                        col.Item().Text("TALE OF THE TAPE METRICS").FontSize(8.5f).Bold().FontColor(Color.FromHex("#0F172A"));
+                        col.Item().PaddingTop(2).Table(table =>
+                        {
+                            table.ColumnsDefinition(cols =>
+                            {
+                                cols.RelativeColumn(1.4f);
+                                cols.RelativeColumn(2.2f);
+                                cols.RelativeColumn(1.4f);
+                            });
+
+                            table.Header(h =>
+                            {
+                                h.Cell().Background(Color.FromHex("#EEF2FF")).Padding(3).AlignCenter().Text(pA.FullName).FontSize(7.5f).Bold().FontColor(Color.FromHex("#3730A3"));
+                                h.Cell().Background(Color.FromHex("#F1F5F9")).Padding(3).AlignCenter().Text("METRIC").FontSize(7.5f).Bold();
+                                h.Cell().Background(Color.FromHex("#ECFDF5")).Padding(3).AlignCenter().Text(pB.FullName).FontSize(7.5f).Bold().FontColor(Color.FromHex("#065F46"));
+                            });
+
+                            void AddRow(string label, string valA, string valB, decimal? numA = null, decimal? numB = null)
+                            {
+                                bool winA = numA.HasValue && numB.HasValue && numA.Value > numB.Value;
+                                bool winB = numA.HasValue && numB.HasValue && numB.Value > numA.Value;
+                                table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(2.5f).AlignCenter().Text(valA + (winA ? " (+)" : "")).FontSize(7.5f).Bold().FontColor(Color.FromHex(winA ? "#4338CA" : "#334155"));
+                                table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(2.5f).AlignCenter().Text(label).FontSize(7.5f).FontColor(Color.FromHex("#475569"));
+                                table.Cell().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(2.5f).AlignCenter().Text((winB ? "(+) " : "") + valB).FontSize(7.5f).Bold().FontColor(Color.FromHex(winB ? "#047857" : "#334155"));
+                            }
+
+                            AddRow("League & Season", $"{pA.League} ({pA.Season})", $"{pB.League} ({pB.Season})");
+                            AddRow("Archetype", pA.Archetype, pB.Archetype);
+                            AddRow("Points / Game", pA.Points?.ToString("F1") ?? "-", pB.Points?.ToString("F1") ?? "-", pA.Points, pB.Points);
+                            AddRow("PTS / 36", pA.PtsPer36?.ToString("F1") ?? "-", pB.PtsPer36?.ToString("F1") ?? "-", pA.PtsPer36, pB.PtsPer36);
+                            AddRow("True Shooting %", pA.TrueShootingPct.HasValue ? $"{pA.TrueShootingPct.Value * 100m:F1}%" : "-", pB.TrueShootingPct.HasValue ? $"{pB.TrueShootingPct.Value * 100m:F1}%" : "-", pA.TrueShootingPct, pB.TrueShootingPct);
+                            AddRow("3-Point %", pA.Fg3Pct.HasValue ? $"{pA.Fg3Pct.Value * 100m:F1}%" : "-", pB.Fg3Pct.HasValue ? $"{pB.Fg3Pct.Value * 100m:F1}%" : "-", pA.Fg3Pct, pB.Fg3Pct);
+                            AddRow("AST / 36", pA.AstPer36?.ToString("F1") ?? "-", pB.AstPer36?.ToString("F1") ?? "-", pA.AstPer36, pB.AstPer36);
+                            AddRow("REB / 36", pA.RebPer36?.ToString("F1") ?? "-", pB.RebPer36?.ToString("F1") ?? "-", pA.RebPer36, pB.RebPer36);
+                            AddRow("Stocks / 36", pA.StocksPer36?.ToString("F2") ?? "-", pB.StocksPer36?.ToString("F2") ?? "-", pA.StocksPer36, pB.StocksPer36);
+                            AddRow("EuroLeague Transition (ETI)", pA.EuroLeagueTransitionIndex?.ToString("F1") ?? "-", pB.EuroLeagueTransitionIndex?.ToString("F1") ?? "-", pA.EuroLeagueTransitionIndex, pB.EuroLeagueTransitionIndex);
+                            AddRow("European Compat. (ECI)", pA.EuropeanCompatibilityIndex?.ToString("F1") ?? "-", pB.EuropeanCompatibilityIndex?.ToString("F1") ?? "-", (decimal?)pA.EuropeanCompatibilityIndex, (decimal?)pB.EuropeanCompatibilityIndex);
+                            AddRow("Defensive Pressure (DPI)", pA.DefensivePressureIndex?.ToString("F1") ?? "-", pB.DefensivePressureIndex?.ToString("F1") ?? "-", (decimal?)pA.DefensivePressureIndex, (decimal?)pB.DefensivePressureIndex);
+                        });
+
+                        col.Item().Height(6);
+
+                        // Side-by-Side Strengths & Weaknesses
+                        col.Item().Row(row =>
+                        {
+                            ComposeComparisonTraitsColumn(row.RelativeItem(), pA, "#EEF2FF", "#4338CA");
+                            row.ConstantItem(8);
+                            ComposeComparisonTraitsColumn(row.RelativeItem(), pB, "#ECFDF5", "#047857");
+                        });
+                    });
+
+                    page.Footer().Element(ComposeFooter);
+                });
+            });
+
+            return document.GeneratePdf();
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = prevCulture;
+            CultureInfo.CurrentUICulture = prevUiCulture;
+        }
+    }
+
+    private static void ComposeComparisonHeroCard(IContainer container, PlayerComparisonProfileDto p, string bgHex, string accentHex, string tag)
+    {
+        container.Background(Color.FromHex(bgHex)).Padding(8).Column(c =>
+        {
+            c.Item().Text(tag).FontSize(6.5f).Bold().FontColor(Color.FromHex(accentHex));
+            c.Item().Text(p.FullName).FontSize(12f).Bold().FontColor(Colors.White);
+            c.Item().Text($"{p.TeamName ?? "-"} • {p.League} • {p.Position ?? "N/A"} • Age {p.Age?.ToString() ?? "-"}").FontSize(7.5f).FontColor(Color.FromHex("#CBD5E1"));
+            c.Item().PaddingTop(2).Text($"Overall Impact: {p.RadarMetrics.OverallImpact:F1}/100 | ETI: {p.EuroLeagueTransitionIndex?.ToString("F1") ?? "-"}").FontSize(7.5f).Bold().FontColor(Color.FromHex(accentHex));
+        });
+    }
+
+    private static void ComposeComparisonTraitsColumn(IContainer container, PlayerComparisonProfileDto p, string bgHex, string headerHex)
+    {
+        container.Background(Color.FromHex(bgHex)).Border(1).BorderColor(Color.FromHex(headerHex)).Padding(6).Column(c =>
+        {
+            c.Item().Text($"{p.FullName.ToUpperInvariant()} — STRENGTHS & RISKS").FontSize(7.5f).Bold().FontColor(Color.FromHex(headerHex));
+            c.Item().PaddingTop(2).Text("STRENGTHS:").FontSize(6.8f).Bold().FontColor(Color.FromHex("#047857"));
+            foreach (var s in p.Strengths.Take(3))
+            {
+                c.Item().Text($"• {s.Title} ({s.MetricBadge})").FontSize(6.8f).FontColor(Color.FromHex("#0F172A"));
+            }
+            c.Item().PaddingTop(3).Text("WEAKNESSES / SWING RISKS:").FontSize(6.8f).Bold().FontColor(Color.FromHex("#B45309"));
+            foreach (var w in p.Weaknesses.Take(3))
+            {
+                c.Item().Text($"• {w.Title} ({w.MetricBadge})").FontSize(6.8f).FontColor(Color.FromHex("#0F172A"));
+            }
+        });
     }
 
     private static void ComposeHeader(IContainer container, PlayerScoutingReportDto model)

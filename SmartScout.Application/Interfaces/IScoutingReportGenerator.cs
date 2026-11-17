@@ -5,4 +5,5 @@ namespace SmartScout.Application.Interfaces;
 public interface IScoutingReportGenerator
 {
     byte[] GenerateReportPdf(PlayerScoutingReportDto model);
+    byte[] GenerateComparisonPdf(PlayerComparisonDto model);
 }

@@ -1004,29 +1004,56 @@
     <section id="tab-watchlist" class="tab-content hidden space-y-6">
       
       <!-- Watchlist Header & Controls -->
-      <div class="glass-card rounded-2xl p-5 shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div>
-          <h2 class="text-xl font-display font-bold text-white flex items-center space-x-2.5">
-            <i data-lucide="bookmark" class="w-5 h-5 text-amber-400"></i>
-            <span>Scout Watchlist & Target Board</span>
-            <span id="watchlist-count-badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">0 Targets</span>
-          </h2>
-          <p class="text-xs text-slate-400 mt-1">Priority transfer shortlist, 5-man lineup synergy simulator, and field scouting dossiers</p>
+      <div class="glass-card rounded-2xl p-5 shadow-lg flex flex-col gap-4">
+        <div class="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+          <div>
+            <h2 class="text-xl font-display font-bold text-white flex items-center space-x-2.5 flex-wrap gap-y-1">
+              <i data-lucide="bookmark" class="w-5 h-5 text-amber-400"></i>
+              <span>Scout Watchlist & Target Board</span>
+              <span id="watchlist-count-badge" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">0 Targets</span>
+            </h2>
+            <p class="text-xs text-slate-400 mt-1">Multi-board scout workspaces, 5-man lineup synergy simulator, and confidential field dossiers</p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+            <!-- Multi-Board Workspace Switcher -->
+            <div class="flex items-center space-x-1.5 bg-slate-900/90 border border-slate-700/80 rounded-xl px-2.5 py-1">
+              <i data-lucide="folder-kanban" class="w-3.5 h-3.5 text-indigo-400"></i>
+              <select id="watchlist-board-select" onchange="onWatchlistBoardChange()" class="bg-transparent text-xs font-semibold text-white focus:outline-none cursor-pointer pr-2 py-0.5">
+                <option value="default" class="bg-slate-900 text-white">Default Global Board</option>
+              </select>
+            </div>
+            <button id="btn-new-board" onclick="toggleCreateBoardPanel(true)" class="px-2.5 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold flex items-center space-x-1 transition" title="Create New Scout Workspace Board">
+              <i data-lucide="folder-plus" class="w-3.5 h-3.5"></i>
+              <span>New Board</span>
+            </button>
+            <button id="btn-delete-board" onclick="deleteActiveBoard()" class="hidden px-2.5 py-1.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 text-xs font-semibold flex items-center space-x-1 transition" title="Delete Selected Custom Board">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
+
+            <!-- Search input for watchlist -->
+            <div class="relative flex-1 sm:w-48">
+              <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+              <input type="text" id="watchlist-search-input" oninput="filterWatchlistUI()" placeholder="Search targets..." class="w-full bg-slate-900 border border-slate-700/80 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
+            </div>
+            <button onclick="exportWatchlistCsv()" class="px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-semibold flex items-center space-x-1.5 transition" title="Export Watchlist to CSV / Excel">
+              <i data-lucide="sheet" class="w-3.5 h-3.5"></i>
+              <span>Export CSV</span>
+            </button>
+            <button onclick="fetchWatchlist()" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition" title="Refresh Watchlist">
+              <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+            </button>
+          </div>
         </div>
 
-        <div class="flex items-center space-x-2.5 w-full sm:w-auto">
-          <!-- Search input for watchlist -->
-          <div class="relative flex-1 sm:w-56">
-            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
-            <input type="text" id="watchlist-search-input" oninput="filterWatchlistUI()" placeholder="Search targets..." class="w-full bg-slate-900 border border-slate-700/80 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500">
+        <!-- Inline Create Custom Board Bar -->
+        <div id="create-board-panel" class="hidden pt-3 border-t border-slate-800/80 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <input type="text" id="new-board-name-input" placeholder="Board name (e.g. EuroLeague Backup Guards 2027)..." class="flex-1 bg-slate-950/90 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+          <input type="text" id="new-board-owner-input" placeholder="Scout / Owner (optional)" class="sm:w-48 bg-slate-950/90 border border-slate-700 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500">
+          <div class="flex items-center space-x-2">
+            <button onclick="submitCreateBoard()" class="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition">Create Board</button>
+            <button onclick="toggleCreateBoardPanel(false)" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition">Cancel</button>
           </div>
-          <button onclick="exportWatchlistCsv()" class="px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-semibold flex items-center space-x-1.5 transition" title="Export Watchlist to CSV / Excel">
-            <i data-lucide="sheet" class="w-3.5 h-3.5"></i>
-            <span>Export CSV</span>
-          </button>
-          <button onclick="fetchWatchlist()" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition" title="Refresh Watchlist">
-            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
-          </button>
         </div>
       </div>
 
@@ -1184,10 +1211,16 @@
             </h2>
             <p class="text-xs text-slate-400 mt-0.5">Compare any two players across leagues with dual-overlay radar analytics, positional percentiles, and transfer verdict</p>
           </div>
-          <button onclick="runComparison()" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-brand-600 to-cyan-600 hover:from-brand-500 hover:to-cyan-500 text-white font-semibold text-xs flex items-center space-x-2 shadow-md transition">
-            <i data-lucide="zap" class="w-4 h-4"></i>
-            <span>Run Head-to-Head Analysis</span>
-          </button>
+          <div class="flex items-center space-x-2">
+            <a id="btn-compare-pdf" href="#" target="_blank" rel="noopener" class="hidden px-4 py-2.5 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 font-semibold text-xs flex items-center space-x-1.5 transition" title="Export Comparison Dossier to PDF">
+              <i data-lucide="file-text" class="w-4 h-4"></i>
+              <span>Download Comparison PDF</span>
+            </a>
+            <button onclick="runComparison()" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-brand-600 to-cyan-600 hover:from-brand-500 hover:to-cyan-500 text-white font-semibold text-xs flex items-center space-x-2 shadow-md transition">
+              <i data-lucide="zap" class="w-4 h-4"></i>
+              <span>Run Head-to-Head Analysis</span>
+            </button>
+          </div>
         </div>
 
         <!-- Dual Player Search Selectors -->
@@ -1759,6 +1792,28 @@
     </div>
   </div>
 
+  <!-- ================= CLUB ROSTER & TEAM EXPLORER MODAL ================= -->
+  <div id="team-roster-modal" onclick="if (event.target === this) closeTeamRosterModal()" class="hidden fixed inset-0 z-[60] bg-slate-950/85 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="rounded-2xl w-full max-w-4xl max-h-[88vh] flex flex-col overflow-hidden shadow-2xl border border-slate-700/80 bg-slate-900">
+      <div class="p-5 border-b border-slate-800 flex items-center justify-between bg-slate-950/80">
+        <div>
+          <div class="flex items-center space-x-2">
+            <i data-lucide="shield" class="w-5 h-5 text-cyan-400"></i>
+            <h3 id="roster-modal-team" class="font-display font-bold text-xl text-white">Club Roster</h3>
+            <span id="roster-modal-league" class="px-2 py-0.5 rounded-full text-xs font-bold bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">League</span>
+          </div>
+          <p id="roster-modal-meta" class="text-xs text-slate-400 mt-1">Loading club rotation...</p>
+        </div>
+        <button onclick="closeTeamRosterModal()" class="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition" title="Close Roster Explorer">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+      <div id="roster-modal-body" class="p-5 overflow-y-auto flex-1 space-y-2">
+        <!-- Rendered dynamically -->
+      </div>
+    </div>
+  </div>
+
   <!-- ================= FOOTER (Clean Corporate Title) ================= -->
   <footer class="mt-auto border-t border-slate-900 py-4 text-center text-xs text-slate-500">
     SmartScout Basketball Analytics Engine
@@ -1806,7 +1861,7 @@
       renderSyncLeaguesGrid();
       initSyncApiKeyUi();
       fetchSleepers();
-      fetchWatchlistCount();
+      fetchScoutBoards().then(() => fetchWatchlistCount());
 
       // Global shortcut: Ctrl+K / Cmd+K to launch AI Smart Search
       document.addEventListener('keydown', (e) => {
@@ -1931,7 +1986,7 @@
       if (tabId === 'players') {
         fetchDirectory();
       } else if (tabId === 'watchlist') {
-        fetchWatchlist();
+        fetchScoutBoards().then(() => fetchWatchlist());
         renderLineupSimulator();
       } else if (tabId === 'sync') {
         fetchSyncStatus();
@@ -2237,7 +2292,7 @@
               </h4>
               <div class="flex items-center space-x-2 text-xs text-slate-300 mt-0.5">
                 <span class="font-semibold text-slate-200 px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700/60">${p.position || 'F'}</span>
-                <span class="font-medium text-white truncate max-w-[140px]">${teamDisplayName}</span>
+                ${renderClickableTeamEl(p.teamName, teamDisplayName, p.league, p.season, 'font-medium text-white hover:text-cyan-400 truncate max-w-[140px] cursor-pointer transition underline decoration-slate-700 hover:decoration-cyan-400')}
                 <span class="text-slate-500">•</span>
                 <span class="font-semibold text-indigo-400">${p.league}</span>
                 ${p.age ? `<span class="text-slate-500">•</span><span class="text-slate-300">Age <strong class="text-white">${p.age}</strong></span>` : ''}
@@ -2538,7 +2593,7 @@
           const metaParts = [];
           const teamFormatted = formatTeamName(p.teamName, p.league);
           if (teamFormatted && teamFormatted !== '-') {
-            metaParts.push(`<span class="text-slate-200 font-medium">${teamFormatted}</span>`);
+            metaParts.push(renderClickableTeamEl(p.teamName, teamFormatted, p.league, reqSeason || (p.careerStats && p.careerStats[0] ? p.careerStats[0].season : ''), 'text-slate-200 hover:text-cyan-400 font-medium cursor-pointer transition underline decoration-slate-600 hover:decoration-cyan-400'));
           }
           if (p.league && p.league !== '-') {
             metaParts.push(`<span class="text-cyan-400 font-semibold">${p.league}</span>`);
@@ -2772,7 +2827,196 @@
       currentModalPlayer = null;
     }
 
-    // ================= WATCHLIST & SCOUT NOTES CONTROLLER =================
+    // ================= CLUB ROSTER & TEAM EXPLORER CONTROLLER =================
+    function renderClickableTeamEl(rawTeam, displayTeam, league, season, cssClass) {
+      const cleanRaw = (rawTeam || '').trim();
+      const nonClub = !cleanRaw || cleanRaw === '-' || cleanRaw === '--' || cleanRaw === 'TOT' || /^\d+TM$/i.test(cleanRaw);
+      const shown = escapeHtml(displayTeam || cleanRaw || '-');
+      if (nonClub) {
+        return `<span class="${cssClass.replace('cursor-pointer', '').replace('hover:text-cyan-400', '')}">${shown}</span>`;
+      }
+      return `<button type="button" onclick="openTeamRosterFromEl(this, event)" data-league="${escapeHtml(league || '')}" data-team="${escapeHtml(cleanRaw)}" data-season="${escapeHtml(String(season || ''))}" class="${cssClass}" title="Explore full club roster">${shown}</button>`;
+    }
+
+    function openTeamRosterFromEl(el, ev) {
+      if (ev) ev.stopPropagation();
+      const league = el?.dataset?.league || '';
+      const team = el?.dataset?.team || '';
+      const seasonRaw = el?.dataset?.season || '';
+      const season = seasonRaw ? parseInt(seasonRaw, 10) : null;
+      openTeamRosterModal(league, team, Number.isFinite(season) && season > 0 ? season : null);
+    }
+
+    function closeTeamRosterModal() {
+      document.getElementById('team-roster-modal')?.classList.add('hidden');
+    }
+
+    async function openTeamRosterModal(league, teamName, season = null) {
+      if (!teamName) return;
+      const modal = document.getElementById('team-roster-modal');
+      const titleEl = document.getElementById('roster-modal-team');
+      const leagueEl = document.getElementById('roster-modal-league');
+      const metaEl = document.getElementById('roster-modal-meta');
+      const bodyEl = document.getElementById('roster-modal-body');
+      if (!modal || !bodyEl) return;
+
+      titleEl.innerText = formatTeamName(teamName, league) || teamName;
+      leagueEl.innerText = league || 'Club';
+      metaEl.innerText = 'Loading club roster & analytics...';
+      bodyEl.innerHTML = `<div class="py-12 text-center text-slate-400 text-xs">Loading club rotation...</div>`;
+      modal.classList.remove('hidden');
+
+      try {
+        let url = `/api/players/teams/roster?team=${encodeURIComponent(teamName)}`;
+        if (league) url += `&league=${encodeURIComponent(league)}`;
+        if (season) url += `&season=${season}`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        const injBadge = data.activeInjuriesCount > 0 ? ` • <span class="text-rose-400 font-semibold">${data.activeInjuriesCount} Active Injuries</span>` : ' • Clean Injury Report';
+        metaEl.innerHTML = `${data.season || season || 2027} Season • <strong class="text-white">${data.playerCount}</strong> Players Tracked${injBadge}`;
+
+        const roster = data.roster || [];
+        if (roster.length === 0) {
+          bodyEl.innerHTML = `<div class="py-10 text-center text-slate-400 text-xs">No roster records found for ${escapeHtml(teamName)}.</div>`;
+          return;
+        }
+
+        bodyEl.innerHTML = `
+          <div class="overflow-x-auto rounded-xl border border-slate-800">
+            <table class="w-full text-left text-xs text-slate-300">
+              <thead class="bg-slate-950/90 text-[10px] uppercase text-slate-400 border-b border-slate-800">
+                <tr>
+                  <th class="py-2.5 px-3">Player</th>
+                  <th class="py-2.5 px-2 text-center">Pos</th>
+                  <th class="py-2.5 px-2 text-center">Age</th>
+                  <th class="py-2.5 px-2 text-center">GP</th>
+                  <th class="py-2.5 px-2 text-center">PPG</th>
+                  <th class="py-2.5 px-2 text-center">RPG</th>
+                  <th class="py-2.5 px-2 text-center">APG</th>
+                  <th class="py-2.5 px-2 text-center">TS%</th>
+                  <th class="py-2.5 px-2 text-center">ETI</th>
+                  <th class="py-2.5 px-3">Status</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-800/70 bg-slate-900/50">
+                ${roster.map(r => `
+                  <tr onclick="closeTeamRosterModal(); openPlayerModal('${r.playerId}', ${r.season || data.season || 2026});" class="hover:bg-slate-800/70 cursor-pointer transition">
+                    <td class="py-2.5 px-3 font-semibold text-white">${escapeHtml(r.fullName)}</td>
+                    <td class="py-2.5 px-2 text-center"><span class="px-1.5 py-0.5 rounded bg-slate-800 text-[10px] font-bold">${escapeHtml(r.position || '-')}</span></td>
+                    <td class="py-2.5 px-2 text-center">${r.age ?? '-'}</td>
+                    <td class="py-2.5 px-2 text-center">${r.gamesPlayed ?? '-'}</td>
+                    <td class="py-2.5 px-2 text-center font-bold text-white">${r.points != null ? r.points.toFixed(1) : '-'}</td>
+                    <td class="py-2.5 px-2 text-center">${r.rebounds != null ? r.rebounds.toFixed(1) : '-'}</td>
+                    <td class="py-2.5 px-2 text-center">${r.assists != null ? r.assists.toFixed(1) : '-'}</td>
+                    <td class="py-2.5 px-2 text-center text-cyan-300">${r.trueShootingPct != null ? (r.trueShootingPct * 100).toFixed(1) + '%' : '-'}</td>
+                    <td class="py-2.5 px-2 text-center font-bold text-emerald-400">${r.euroLeagueTransitionIndex != null ? r.euroLeagueTransitionIndex.toFixed(1) : '-'}</td>
+                    <td class="py-2.5 px-3">${r.activeInjuryStatus ? `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">${escapeHtml(r.activeInjuryStatus)}</span>` : `<span class="text-[10px] text-emerald-400 font-semibold">Active</span>`}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+        lucide.createIcons();
+      } catch (err) {
+        bodyEl.innerHTML = `<div class="py-10 text-center text-rose-400 text-xs">Failed to load club roster: ${escapeHtml(err.message)}</div>`;
+      }
+    }
+
+    // ================= MULTI-BOARD SCOUT WORKSPACES & WATCHLIST CONTROLLER =================
+    let scoutBoards = [];
+    let activeBoardId = localStorage.getItem('smartscout_active_board') || 'default';
+
+    async function fetchScoutBoards() {
+      try {
+        const res = await fetch('/api/boards');
+        if (!res.ok) return;
+        scoutBoards = await res.json();
+        if (activeBoardId !== 'default' && !scoutBoards.some(b => b.id === activeBoardId)) {
+          activeBoardId = 'default';
+          localStorage.setItem('smartscout_active_board', 'default');
+        }
+        renderBoardSelector();
+      } catch (err) {
+        console.error('Boards fetch error:', err);
+      }
+    }
+
+    function renderBoardSelector() {
+      const sel = document.getElementById('watchlist-board-select');
+      const delBtn = document.getElementById('btn-delete-board');
+      if (!sel) return;
+      sel.innerHTML = `<option value="default" class="bg-slate-900 text-white">Default Global Board</option>` +
+        scoutBoards.map(b => `<option value="${b.id}" class="bg-slate-900 text-white">${escapeHtml(b.name)} (${b.playerCount || 0})${b.ownerName ? ' — ' + escapeHtml(b.ownerName) : ''}</option>`).join('');
+      sel.value = activeBoardId;
+      if (delBtn) delBtn.classList.toggle('hidden', activeBoardId === 'default');
+    }
+
+    function onWatchlistBoardChange() {
+      const sel = document.getElementById('watchlist-board-select');
+      if (!sel) return;
+      activeBoardId = sel.value || 'default';
+      localStorage.setItem('smartscout_active_board', activeBoardId);
+      const delBtn = document.getElementById('btn-delete-board');
+      if (delBtn) delBtn.classList.toggle('hidden', activeBoardId === 'default');
+      fetchWatchlist();
+    }
+
+    function toggleCreateBoardPanel(show) {
+      const panel = document.getElementById('create-board-panel');
+      if (!panel) return;
+      panel.classList.toggle('hidden', !show);
+      if (show) {
+        const inp = document.getElementById('new-board-name-input');
+        if (inp) { inp.value = ''; inp.focus(); }
+        const own = document.getElementById('new-board-owner-input');
+        if (own) own.value = '';
+      }
+    }
+
+    async function submitCreateBoard() {
+      const nameEl = document.getElementById('new-board-name-input');
+      const ownerEl = document.getElementById('new-board-owner-input');
+      const name = (nameEl?.value || '').trim();
+      const ownerName = (ownerEl?.value || '').trim() || null;
+      if (!name) {
+        nameEl?.focus();
+        return;
+      }
+      try {
+        const res = await fetch('/api/boards', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, ownerName })
+        });
+        if (!res.ok) return;
+        const created = await res.json();
+        activeBoardId = created.id;
+        localStorage.setItem('smartscout_active_board', activeBoardId);
+        toggleCreateBoardPanel(false);
+        await fetchScoutBoards();
+        await fetchWatchlist();
+      } catch (err) {
+        console.error('Create board error:', err);
+      }
+    }
+
+    async function deleteActiveBoard() {
+      if (activeBoardId === 'default') return;
+      try {
+        const res = await fetch(`/api/boards/${activeBoardId}`, { method: 'DELETE' });
+        if (!res.ok) return;
+        activeBoardId = 'default';
+        localStorage.setItem('smartscout_active_board', 'default');
+        await fetchScoutBoards();
+        await fetchWatchlist();
+      } catch (err) {
+        console.error('Delete board error:', err);
+      }
+    }
+
     let notesDebounceTimer = null;
     function debounceSaveNotes() {
       if (!currentModalPlayer) return;
@@ -2786,7 +3030,11 @@
         try {
           const notes = document.getElementById('modal-scout-notes').value;
           const id = currentModalPlayer.playerId || currentModalPlayer.id;
-          const res = await fetch(`/api/players/${id}/notes`, {
+          const onCustomBoard = activeBoardId !== 'default' && currentWatchlist.some(x => x.id === id);
+          const endpoint = onCustomBoard
+            ? `/api/boards/${activeBoardId}/players/${id}/notes`
+            : `/api/players/${id}/notes`;
+          const res = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ notes })
@@ -2830,12 +3078,16 @@
     async function toggleModalWatchlist() {
       if (!currentModalPlayer) return;
       const id = currentModalPlayer.playerId || currentModalPlayer.id;
+      const endpoint = activeBoardId !== 'default'
+        ? `/api/boards/${activeBoardId}/players/${id}`
+        : `/api/players/${id}/watchlist`;
       try {
-        const res = await fetch(`/api/players/${id}/watchlist`, { method: 'POST' });
+        const res = await fetch(endpoint, { method: 'POST' });
         if (!res.ok) return;
         const data = await res.json();
         currentModalPlayer.isWatchlisted = data.isWatchlisted;
         updateModalWatchlistState(data.isWatchlisted);
+        fetchScoutBoards();
         fetchWatchlistCount();
         const star = document.getElementById(`card-star-${id}`);
         if (star) {
@@ -2849,8 +3101,11 @@
 
     async function toggleCardWatchlist(playerId, event) {
       if (event) event.stopPropagation();
+      const endpoint = activeBoardId !== 'default'
+        ? `/api/boards/${activeBoardId}/players/${playerId}`
+        : `/api/players/${playerId}/watchlist`;
       try {
-        const res = await fetch(`/api/players/${playerId}/watchlist`, { method: 'POST' });
+        const res = await fetch(endpoint, { method: 'POST' });
         if (!res.ok) return;
         const data = await res.json();
         const star = document.getElementById(`card-star-${playerId}`);
@@ -2861,6 +3116,7 @@
           currentModalPlayer.isWatchlisted = data.isWatchlisted;
           updateModalWatchlistState(data.isWatchlisted);
         }
+        fetchScoutBoards();
         fetchWatchlistCount();
         if (currentTab === 'watchlist') fetchWatchlist(false);
       } catch (err) {
@@ -2871,7 +3127,8 @@
     let currentWatchlist = [];
     async function fetchWatchlistCount() {
       try {
-        const res = await fetch('/api/players/watchlist');
+        const url = activeBoardId !== 'default' ? `/api/boards/${activeBoardId}/players` : '/api/players/watchlist';
+        const res = await fetch(url);
         if (!res.ok) return;
         const list = await res.json();
         const count = list.length;
@@ -2900,7 +3157,8 @@
       }
 
       try {
-        const res = await fetch('/api/players/watchlist');
+        const url = activeBoardId !== 'default' ? `/api/boards/${activeBoardId}/players` : '/api/players/watchlist';
+        const res = await fetch(url);
         if (!res.ok) throw new Error();
         currentWatchlist = await res.json();
         loading.classList.add('hidden');
@@ -2972,8 +3230,12 @@
     function renderWatchlistCards(items) {
       const grid = document.getElementById('watchlist-grid');
       grid.innerHTML = items.map(p => {
-        const eti = p.euroLeagueTransitionIndex != null ? p.euroLeagueTransitionIndex.toFixed(1) : '--';
-        const s36 = p.stocksPer36 != null ? p.stocksPer36.toFixed(1) : '--';
+        const rawEti = p.euroLeagueTransitionIndex ?? p.latestStat?.euroLeagueTransitionIndex;
+        const rawS36 = p.stocksPer36 ?? p.latestStat?.stocksPer36;
+        const rawPos = p.position || p.primaryPosition || 'F';
+        const rawSeason = p.latestStat?.season || 2026;
+        const eti = rawEti != null ? rawEti.toFixed(1) : '--';
+        const s36 = rawS36 != null ? rawS36.toFixed(1) : '--';
         const tpr = p.threePointRate != null ? (p.threePointRate * 100).toFixed(0) + '%' : '--';
         const marketTier = p.estimatedMarketValueTier || 'Tier 4 • Core Rotation / Developmental';
         const expiry = p.contractExpirySeason ? `${p.contractExpirySeason} Season` : '2026';
@@ -2990,7 +3252,7 @@
                   <span>Shortlist Target</span>
                 </span>
                 <span class="px-2 py-0.5 rounded text-[11px] font-semibold text-slate-400 bg-slate-800">${p.league}</span>
-                ${p.euroLeagueTransitionIndex ? `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">ETI ${eti}</span>` : ''}
+                ${rawEti ? `<span class="px-2 py-0.5 rounded text-[11px] font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">ETI ${eti}</span>` : ''}
               </div>
               <button onclick="toggleCardWatchlist('${p.id}', event)" class="p-1.5 rounded-lg text-amber-400 hover:text-rose-400 hover:bg-rose-500/10 transition" title="Remove from Watchlist">
                 <i data-lucide="x" class="w-4 h-4"></i>
@@ -2999,12 +3261,12 @@
 
             <!-- Player Bio -->
             <div class="mt-3.5">
-              <h4 class="font-display font-bold text-lg text-white truncate cursor-pointer hover:text-amber-400 transition" onclick="openPlayerModal('${p.id}', 2026)">
+              <h4 class="font-display font-bold text-lg text-white truncate cursor-pointer hover:text-amber-400 transition" onclick="openPlayerModal('${p.id}', ${rawSeason})">
                 ${p.fullName}
               </h4>
               <p class="text-xs text-slate-400 mt-1 flex items-center space-x-1.5 flex-wrap">
-                <span class="font-semibold text-slate-300 px-1.5 py-0.5 rounded bg-slate-800">${p.position || 'F'}</span>
-                <span class="font-medium text-slate-200">${formatTeamName(p.teamName, p.league)}</span>
+                <span class="font-semibold text-slate-300 px-1.5 py-0.5 rounded bg-slate-800">${rawPos}</span>
+                ${renderClickableTeamEl(p.teamName, formatTeamName(p.teamName, p.league), p.league, rawSeason, 'font-medium text-slate-200 hover:text-cyan-400 cursor-pointer transition underline decoration-slate-700 hover:decoration-cyan-400')}
                 ${p.age ? `<span>•</span><span>Age: <strong class="text-white">${p.age}</strong></span>` : ''}
                 ${(p.nationality && p.nationality !== '--') ? `<span>•</span><span>${formatNationality(p.nationality, p.league, p.fullName)}</span>` : ''}
               </p>
@@ -3418,6 +3680,12 @@
 
         renderComparisonStrengthsWeaknesses('A', pA);
         renderComparisonStrengthsWeaknesses('B', pB);
+
+        const pdfBtn = document.getElementById('btn-compare-pdf');
+        if (pdfBtn) {
+          pdfBtn.href = `/api/players/${compareSelectedA.id}/compare.pdf?season=${sA}&targetPlayerId=${compareSelectedB.id}&targetSeason=${sB}`;
+          pdfBtn.classList.remove('hidden');
+        }
 
         lucide.createIcons();
       } catch (err) {

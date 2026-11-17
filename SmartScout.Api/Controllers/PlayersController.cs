@@ -199,6 +199,214 @@ public class PlayersController : ControllerBase
         return File(pdfBytes, "application/pdf", fileName);
     }
 
+    [HttpGet("{id:guid}/compare.pdf")]
+    public async Task<IActionResult> DownloadComparisonPdf(
+        Guid id,
+        [FromQuery] int season,
+        [FromQuery] Guid targetPlayerId,
+        [FromQuery] int targetSeason,
+        [FromServices] IScoutingReportGenerator reportGenerator)
+    {
+        var comparison = await _mediator.Send(new SmartScout.Application.UseCases.Analytics.ComparePlayersQuery
+        {
+            PlayerAId = id,
+            SeasonA = season,
+            PlayerBId = targetPlayerId,
+            SeasonB = targetSeason
+        });
+
+        byte[] pdfBytes = reportGenerator.GenerateComparisonPdf(comparison);
+        string safeNameA = (comparison.PlayerA.FullName ?? "PlayerA").Replace(" ", "_");
+        string safeNameB = (comparison.PlayerB.FullName ?? "PlayerB").Replace(" ", "_");
+        return File(pdfBytes, "application/pdf", $"SmartScout_Compare_{safeNameA}_vs_{safeNameB}.pdf");
+    }
+
+    [HttpGet("teams")]
+    public async Task<IActionResult> GetTeamsSummary(
+        [FromServices] ISmartScoutDbContext dbContext,
+        [FromQuery] string? league = null,
+        [FromQuery] int season = 2027,
+        [FromQuery] string? search = null,
+        [FromQuery] int top = 60,
+        CancellationToken cancellationToken = default)
+    {
+        var statsQuery = dbContext.SeasonStats
+            .AsNoTracking()
+            .Include(s => s.Player)
+            .Where(s => s.Season == season && !string.IsNullOrWhiteSpace(s.TeamName) && s.TeamName != "TOT" && s.TeamName != "2TM" && s.TeamName != "3TM");
+
+        if (!string.IsNullOrWhiteSpace(league) && !string.Equals(league, "ALL", StringComparison.OrdinalIgnoreCase))
+        {
+            statsQuery = statsQuery.Where(s => s.League == league.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            string pattern = $"%{search.Trim()}%";
+            statsQuery = statsQuery.Where(s => EF.Functions.ILike(s.TeamName!, pattern) || EF.Functions.ILike(s.League, pattern));
+        }
+
+        var rows = await statsQuery
+            .Select(s => new
+            {
+                s.League,
+                TeamName = s.TeamName!,
+                s.PlayerId,
+                Age = s.Player != null ? s.Player.CurrentAge : null,
+                s.EuroLeagueTransitionIndex,
+                s.Points
+            })
+            .ToListAsync(cancellationToken);
+
+        var activeInjuredIds = await dbContext.PlayerInjuries
+            .AsNoTracking()
+            .Where(i => i.Status != "Recovered" && i.Status != "Healthy" && i.Status != "Cleared")
+            .Select(i => i.PlayerId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        var injuredSet = activeInjuredIds.ToHashSet();
+
+        var grouped = rows
+            .GroupBy(r => (r.League, r.TeamName))
+            .Select(g => new
+            {
+                League = g.Key.League,
+                TeamName = g.Key.TeamName,
+                Season = season,
+                PlayerCount = g.Select(x => x.PlayerId).Distinct().Count(),
+                AvgAge = g.Where(x => x.Age.HasValue).Select(x => (double)x.Age!.Value).DefaultIfEmpty(0).Average(),
+                AvgEti = g.Where(x => x.EuroLeagueTransitionIndex.HasValue).Select(x => (double)x.EuroLeagueTransitionIndex!.Value).DefaultIfEmpty(0).Average(),
+                AvgPoints = g.Where(x => x.Points.HasValue).Select(x => (double)x.Points!.Value).DefaultIfEmpty(0).Average(),
+                ActiveInjuriesCount = g.Select(x => x.PlayerId).Distinct().Count(id => injuredSet.Contains(id))
+            })
+            .OrderByDescending(x => x.AvgEti)
+            .ThenByDescending(x => x.PlayerCount)
+            .Take(Math.Clamp(top, 1, 200))
+            .ToList();
+
+        return Ok(grouped);
+    }
+
+    [HttpGet("teams/roster")]
+    public async Task<IActionResult> GetTeamRoster(
+        [FromServices] ISmartScoutDbContext dbContext,
+        [FromQuery] string league,
+        [FromQuery] string team,
+        [FromQuery] int? season = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(team))
+            return BadRequest(new { Message = "Team parameter is required." });
+
+        var lowerVariants = SmartScout.Application.Services.SleeperScoutingService
+            .GetTeamNameVariants(team)
+            .Select(v => v.ToLowerInvariant())
+            .ToList();
+
+        int? resolvedMaxSeason = await dbContext.SeasonStats
+            .AsNoTracking()
+            .Where(s => s.TeamName != null
+                && lowerVariants.Contains(s.TeamName.ToLower())
+                && (string.IsNullOrWhiteSpace(league) || s.League == league))
+            .MaxAsync(s => (int?)s.Season, cancellationToken);
+
+        int targetSeason = season ?? resolvedMaxSeason ?? 2027;
+
+        async Task<List<RosterProjection>> QuerySeasonRosterAsync(int querySeason)
+        {
+            var q = dbContext.SeasonStats
+                .AsNoTracking()
+                .Include(s => s.Player)
+                .Where(s => s.Season == querySeason
+                    && s.TeamName != null
+                    && lowerVariants.Contains(s.TeamName.ToLower()));
+
+            if (!string.IsNullOrWhiteSpace(league))
+                q = q.Where(s => s.League == league);
+
+            return await q
+                .OrderByDescending(s => s.EuroLeagueTransitionIndex ?? 0m)
+                .ThenByDescending(s => s.Points ?? 0m)
+                .Select(s => new RosterProjection(
+                    s.PlayerId,
+                    s.Player != null ? s.Player.FullName : "Unknown",
+                    s.Player != null ? (s.Player.PrimaryPosition ?? s.Player.Position) : null,
+                    s.Player != null ? s.Player.Nationality : null,
+                    s.Player != null ? s.Player.CurrentAge : null,
+                    s.Player != null ? s.Player.HeightCm : null,
+                    s.League,
+                    s.TeamName!,
+                    s.Season,
+                    s.GamesPlayed,
+                    s.Minutes,
+                    s.Points,
+                    s.Rebounds,
+                    s.Assists,
+                    s.PtsPer36,
+                    s.TrueShootingPct,
+                    s.Fg3Pct,
+                    s.EuroLeagueTransitionIndex))
+                .ToListAsync(cancellationToken);
+        }
+
+        var rawRoster = await QuerySeasonRosterAsync(targetSeason);
+
+        // If caller explicitly passed a season with no matches, fall back to latest tracked season for this club
+        if (rawRoster.Count == 0 && season.HasValue && resolvedMaxSeason.HasValue && resolvedMaxSeason.Value != targetSeason)
+        {
+            targetSeason = resolvedMaxSeason.Value;
+            rawRoster = await QuerySeasonRosterAsync(targetSeason);
+        }
+
+        var roster = rawRoster
+            .GroupBy(r => r.PlayerId)
+            .Select(g => g.First())
+            .ToList();
+
+        var rosterIds = roster.Select(r => r.PlayerId).Distinct().ToList();
+        var injuries = await dbContext.PlayerInjuries
+            .AsNoTracking()
+            .Where(i => rosterIds.Contains(i.PlayerId) && i.Status != "Recovered" && i.Status != "Healthy" && i.Status != "Cleared")
+            .OrderByDescending(i => i.ReportedAt)
+            .ToListAsync(cancellationToken);
+
+        var injByPlayer = injuries.GroupBy(i => i.PlayerId).ToDictionary(g => g.Key, g => g.First());
+
+        var enrichedRoster = roster.Select(r => new
+        {
+            r.PlayerId,
+            r.FullName,
+            r.Position,
+            r.Nationality,
+            r.Age,
+            r.HeightCm,
+            r.League,
+            r.TeamName,
+            r.Season,
+            r.GamesPlayed,
+            r.Minutes,
+            r.Points,
+            r.Rebounds,
+            r.Assists,
+            r.PtsPer36,
+            r.TrueShootingPct,
+            r.Fg3Pct,
+            r.EuroLeagueTransitionIndex,
+            ActiveInjuryStatus = injByPlayer.TryGetValue(r.PlayerId, out var inj) ? inj.Status : null,
+            ActiveInjuryDetail = injByPlayer.TryGetValue(r.PlayerId, out var inj2) ? inj2.InjuryType : null
+        }).ToList();
+
+        return Ok(new
+        {
+            TeamName = team,
+            League = league,
+            Season = targetSeason,
+            PlayerCount = enrichedRoster.Count,
+            ActiveInjuriesCount = enrichedRoster.Count(r => r.ActiveInjuryStatus != null),
+            Roster = enrichedRoster
+        });
+    }
+
     [HttpGet("{id:guid}/profile")]
     public async Task<IActionResult> GetPlayerProfile(
         Guid id,
@@ -565,4 +773,24 @@ public class PlayersController : ControllerBase
 
         return chosen;
     }
+
+    private sealed record RosterProjection(
+        Guid PlayerId,
+        string FullName,
+        string? Position,
+        string? Nationality,
+        int? Age,
+        int? HeightCm,
+        string League,
+        string TeamName,
+        int Season,
+        int GamesPlayed,
+        decimal? Minutes,
+        decimal? Points,
+        decimal? Rebounds,
+        decimal? Assists,
+        decimal? PtsPer36,
+        decimal? TrueShootingPct,
+        decimal? Fg3Pct,
+        decimal? EuroLeagueTransitionIndex);
 }

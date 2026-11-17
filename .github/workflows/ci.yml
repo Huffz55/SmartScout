@@ -1,0 +1,35 @@
+name: SmartScout CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore SmartScout.slnx
+
+      - name: Build Release configuration
+        run: dotnet build SmartScout.slnx -c Release --no-restore
+
+      - name: Run unit tests
+        run: dotnet test SmartScout.slnx -c Release --no-build --verbosity normal
+
+      - name: Validate Docker Compose configuration
+        env:
+          POSTGRES_PASSWORD: ci-validation-password
+          SMARTSCOUT_API_KEY: ci-validation-api-key
+        run: docker compose config --quiet

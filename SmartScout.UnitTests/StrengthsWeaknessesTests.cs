@@ -151,4 +151,120 @@ public class StrengthsWeaknessesTests
         Assert.NotNull(pdf);
         Assert.True(pdf.Length > 1000);
     }
+
+    [Fact]
+    public void GenerateComparisonPdf_ProducesValidPdfDocument()
+    {
+        QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
+        var generator = new QuestPdfScoutingReportGenerator();
+
+        var comparison = new PlayerComparisonDto
+        {
+            SimilarityScore = 84.5,
+            ScoutingVerdict = "Comparable perimeter scoring profiles with stronger defensive activity for Player A.",
+            PlayerA = new PlayerComparisonProfileDto
+            {
+                PlayerId = Guid.NewGuid(),
+                FullName = "Alex Guard",
+                League = "EuroLeague",
+                TeamName = "Fenerbahçe",
+                Position = "PG",
+                Season = 2027,
+                Archetype = "Pick-and-Roll Maestro",
+                GamesPlayed = 28,
+                Age = 24,
+                HeightCm = 191,
+                WeightKg = 86,
+                Points = 14.2m,
+                PtsPer36 = 18.6m,
+                TrueShootingPct = 0.612m,
+                Fg3Pct = 0.395m,
+                AstPer36 = 6.8m,
+                RebPer36 = 4.1m,
+                StocksPer36 = 1.9m,
+                EuroLeagueTransitionIndex = 82.4m,
+                EstimatedMarketValueTier = "Tier 2 • Prime Starter",
+                RadarMetrics = new RadarMetricsDto(78, 82, 85, 48, 72, 81),
+                Strengths = new List<ScoutingTraitDto>
+                {
+                    new() { Category = "Playmaking", Title = "High-Volume P&R Creator", Detail = "6.8 AST/36 with low turnover pressure.", MetricBadge = "6.8 AST/36" }
+                },
+                Weaknesses = new List<ScoutingTraitDto>
+                {
+                    new() { Category = "Rebounding", Title = "Below-Average Glass Work", Detail = "4.1 REB/36 limits switchability against big guards.", MetricBadge = "4.1 REB/36" }
+                }
+            },
+            PlayerB = new PlayerComparisonProfileDto
+            {
+                PlayerId = Guid.NewGuid(),
+                FullName = "Jordan Wing",
+                League = "ACB",
+                TeamName = "Real Madrid",
+                Position = "SG",
+                Season = 2027,
+                Archetype = "3-and-D Wing",
+                GamesPlayed = 26,
+                Age = 25,
+                HeightCm = 198,
+                WeightKg = 94,
+                Points = 12.4m,
+                PtsPer36 = 16.5m,
+                TrueShootingPct = 0.594m,
+                Fg3Pct = 0.381m,
+                AstPer36 = 3.2m,
+                RebPer36 = 5.4m,
+                StocksPer36 = 2.2m,
+                EuroLeagueTransitionIndex = 79.1m,
+                EstimatedMarketValueTier = "Tier 2 • Prime Starter",
+                RadarMetrics = new RadarMetricsDto(70, 77, 52, 62, 84, 76),
+                Strengths = new List<ScoutingTraitDto>
+                {
+                    new() { Category = "Defense", Title = "Switchable Wing Stopper", Detail = "2.2 stocks/36 across multiple perimeter assignments.", MetricBadge = "2.2 STK/36" }
+                },
+                Weaknesses = new List<ScoutingTraitDto>
+                {
+                    new() { Category = "Playmaking", Title = "Limited Secondary Creation", Detail = "3.2 AST/36 relies on catch-and-shoot reads.", MetricBadge = "3.2 AST/36" }
+                }
+            }
+        };
+
+        byte[] pdf = generator.GenerateComparisonPdf(comparison);
+
+        Assert.NotNull(pdf);
+        Assert.True(pdf.Length > 1000);
+        Assert.Equal((byte)'%', pdf[0]);
+        Assert.Equal((byte)'P', pdf[1]);
+        Assert.Equal((byte)'D', pdf[2]);
+        Assert.Equal((byte)'F', pdf[3]);
+    }
+
+    [Fact]
+    public void ScoutBoard_CreatesEntriesAndUpdatesNotes()
+    {
+        var board = new ScoutBoard("  EuroLeague Shortlist 2027  ", "  Mehmet  ");
+        Assert.Equal("EuroLeague Shortlist 2027", board.Name);
+        Assert.Equal("Mehmet", board.OwnerName);
+        Assert.NotEqual(Guid.Empty, board.Id);
+
+        var playerId = Guid.NewGuid();
+        var entry = new ScoutBoardEntry(board.Id, playerId, "Priority summer guard");
+        Assert.Equal(board.Id, entry.BoardId);
+        Assert.Equal(playerId, entry.PlayerId);
+        Assert.Equal("Priority summer guard", entry.Notes);
+
+        entry.SetNotes("  Confirmed medical clearance  ");
+        Assert.Equal("Confirmed medical clearance", entry.Notes);
+    }
+
+    [Fact]
+    public void GetTeamNameVariants_ResolvesNbaCodesAndFullNamesBidirectionally()
+    {
+        var fromFull = SleeperScoutingService.GetTeamNameVariants("Dallas Mavericks");
+        Assert.Contains("Dallas Mavericks", fromFull);
+        Assert.Contains("DAL", fromFull);
+
+        var fromCode = SleeperScoutingService.GetTeamNameVariants("CHI");
+        Assert.Contains("CHI", fromCode);
+        Assert.Contains("Chicago Bulls", fromCode);
+    }
 }

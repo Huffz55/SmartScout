@@ -21,6 +21,8 @@ public class SmartScoutDbContext : DbContext, ISmartScoutDbContext
     public DbSet<BasketballLeague> Leagues { get; set; }
     public DbSet<BasketballSeason> Seasons { get; set; }
     public DbSet<IngestionJobLog> IngestionJobLogs { get; set; }
+    public DbSet<ScoutBoard> ScoutBoards { get; set; }
+    public DbSet<ScoutBoardEntry> ScoutBoardEntries { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -253,6 +255,28 @@ public class SmartScoutDbContext : DbContext, ISmartScoutDbContext
 
             entity.Property(e => e.RawScrapedPayload)
                 .HasColumnType("jsonb");
+        });
+
+        modelBuilder.Entity<ScoutBoard>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.Name).IsRequired().HasMaxLength(100);
+            entity.Property(e => e.OwnerName).IsRequired().HasMaxLength(80);
+            entity.HasMany(e => e.Entries)
+                .WithOne(x => x.Board)
+                .HasForeignKey(x => x.BoardId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ScoutBoardEntry>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => new { e.BoardId, e.PlayerId }).IsUnique();
+            entity.Property(e => e.Notes).HasMaxLength(2000);
+            entity.HasOne(e => e.Player)
+                .WithMany()
+                .HasForeignKey(e => e.PlayerId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         // Global DateTime UTC ValueConverter: guarantees all DateTime/DateTime? are written as UTC to PostgreSQL
