@@ -45,7 +45,7 @@ public class GetPlayersQueryHandler : IRequestHandler<GetPlayersQuery, PagedResu
     }
 
     public static string EscapeLikePattern(string term) =>
-        term.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
+        IPlayerDirectorySearchFilter.EscapeLikePattern(term);
 
     private static IQueryable<Player> ApplyFallbackSearchFilter(IQueryable<Player> query, string? searchTerm)
     {

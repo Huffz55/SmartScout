@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using FluentValidation;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using SmartScout.Application.Common.Queries;
 using SmartScout.Application.Interfaces;
 using SmartScout.Application.Services;
 
@@ -62,17 +63,21 @@ public class GetTeamsSummaryQueryValidator : AbstractValidator<GetTeamsSummaryQu
     public GetTeamsSummaryQueryValidator()
     {
         RuleFor(x => x.Season).InclusiveBetween(1946, 2100);
-        RuleFor(x => x.Top).InclusiveBetween(1, 500);
+        RuleFor(x => x.Top).InclusiveBetween(1, 200);
     }
 }
 
 public class GetTeamsSummaryQueryHandler : IRequestHandler<GetTeamsSummaryQuery, List<TeamSummaryDto>>
 {
     private readonly ISmartScoutDbContext _dbContext;
+    private readonly IPlayerDirectorySearchFilter? _searchFilter;
 
-    public GetTeamsSummaryQueryHandler(ISmartScoutDbContext dbContext)
+    public GetTeamsSummaryQueryHandler(
+        ISmartScoutDbContext dbContext,
+        IPlayerDirectorySearchFilter? searchFilter = null)
     {
         _dbContext = dbContext;
+        _searchFilter = searchFilter;
     }
 
     public async Task<List<TeamSummaryDto>> Handle(GetTeamsSummaryQuery request, CancellationToken cancellationToken)
@@ -91,6 +96,11 @@ public class GetTeamsSummaryQueryHandler : IRequestHandler<GetTeamsSummaryQuery,
             statsQuery = statsQuery.Where(s => s.League == trimmedLeague);
         }
 
+        if (!string.IsNullOrWhiteSpace(request.Search) && _searchFilter != null)
+        {
+            statsQuery = _searchFilter.ApplyTeamSearchFilter(statsQuery, request.Search);
+        }
+
         var rows = await statsQuery
             .Select(s => new
             {
@@ -103,7 +113,7 @@ public class GetTeamsSummaryQueryHandler : IRequestHandler<GetTeamsSummaryQuery,
             })
             .ToListAsync(cancellationToken);
 
-        if (!string.IsNullOrWhiteSpace(request.Search))
+        if (!string.IsNullOrWhiteSpace(request.Search) && _searchFilter == null)
         {
             string term = request.Search.Trim();
             rows = rows
@@ -114,7 +124,7 @@ public class GetTeamsSummaryQueryHandler : IRequestHandler<GetTeamsSummaryQuery,
 
         var activeInjuredIds = await _dbContext.PlayerInjuries
             .AsNoTracking()
-            .Where(i => i.Status != "Recovered" && i.Status != "Healthy" && i.Status != "Cleared")
+            .Where(InjuryPredicates.IsActive)
             .Select(i => i.PlayerId)
             .Distinct()
             .ToListAsync(cancellationToken);
@@ -238,7 +248,8 @@ public class GetTeamRosterQueryHandler : IRequestHandler<GetTeamRosterQuery, Tea
         var rosterIds = roster.Select(r => r.PlayerId).Distinct().ToList();
         var injuries = await _dbContext.PlayerInjuries
             .AsNoTracking()
-            .Where(i => rosterIds.Contains(i.PlayerId) && i.Status != "Recovered" && i.Status != "Healthy" && i.Status != "Cleared")
+            .Where(InjuryPredicates.IsActive)
+            .Where(i => rosterIds.Contains(i.PlayerId))
             .OrderByDescending(i => i.ReportedAt)
             .ToListAsync(cancellationToken);
 

@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using FluentValidation;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using SmartScout.Application.Common.Queries;
 using SmartScout.Application.Interfaces;
 using SmartScout.Domain.Entities;
 
@@ -46,7 +47,7 @@ public class GetInjuriesSummaryQueryValidator : AbstractValidator<GetInjuriesSum
 {
     public GetInjuriesSummaryQueryValidator()
     {
-        RuleFor(x => x.Top).InclusiveBetween(1, 1000);
+        RuleFor(x => x.Top).InclusiveBetween(1, 500);
     }
 }
 
@@ -61,17 +62,16 @@ public class GetInjuriesSummaryQueryHandler : IRequestHandler<GetInjuriesSummary
 
     public async Task<InjuriesSummaryDto> Handle(GetInjuriesSummaryQuery request, CancellationToken cancellationToken)
     {
-        int clampedTop = Math.Clamp(request.Top, 1, 500);
         var query = _dbContext.PlayerInjuries.AsNoTracking();
 
         if (request.ActiveOnly)
         {
-            query = query.Where(i => i.Status != "Recovered" && i.Status != "Healthy" && i.Status != "Cleared");
+            query = query.Where(InjuryPredicates.IsActive);
         }
 
         var items = await query
             .OrderByDescending(i => i.ReportedAt)
-            .Take(clampedTop)
+            .Take(Math.Clamp(request.Top, 1, 500))
             .Select(i => new InjurySummaryItemDto(
                 i.Id,
                 i.PlayerId,
@@ -89,7 +89,7 @@ public class GetInjuriesSummaryQueryHandler : IRequestHandler<GetInjuriesSummary
 
         int totalCount = await _dbContext.PlayerInjuries.AsNoTracking().CountAsync(cancellationToken);
         int activeCount = await _dbContext.PlayerInjuries.AsNoTracking().CountAsync(
-            i => i.Status != "Recovered" && i.Status != "Healthy" && i.Status != "Cleared",
+            InjuryPredicates.IsActive,
             cancellationToken);
 
         return new InjuriesSummaryDto(totalCount, activeCount, items);

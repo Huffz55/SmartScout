@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using FluentValidation;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using SmartScout.Application.Common.Queries;
 using SmartScout.Application.Interfaces;
 using SmartScout.Domain.Entities;
 
@@ -100,7 +101,7 @@ public class GetSyncStatusQueryHandler : IRequestHandler<GetSyncStatusQuery, Syn
 
         int activeInjuriesCount = await _dbContext.PlayerInjuries
             .AsNoTracking()
-            .CountAsync(i => i.Status != "Recovered" && i.Status != "Healthy" && i.Status != "Cleared", cancellationToken);
+            .CountAsync(InjuryPredicates.IsActive, cancellationToken);
 
         int totalPlayersCount = await _dbContext.Players
             .AsNoTracking()
@@ -190,6 +191,7 @@ public class SavePlayerNotesCommandValidator : AbstractValidator<SavePlayerNotes
     public SavePlayerNotesCommandValidator()
     {
         RuleFor(x => x.PlayerId).NotEmpty();
+        RuleFor(x => x.Notes).MaximumLength(2000).WithMessage("Notes cannot exceed 2000 characters.");
     }
 }
 

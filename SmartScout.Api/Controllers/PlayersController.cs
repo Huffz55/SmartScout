@@ -26,6 +26,11 @@ public class PlayersController : ControllerBase
 
     public record ScoutNotesDto(string? Notes);
 
+    private static string FormatLeagueFilter(string? league) =>
+        string.IsNullOrWhiteSpace(league) || league.Equals("all", StringComparison.OrdinalIgnoreCase)
+            ? "ALL (EuroLeague, EuroCup, ACB, BSL, BCL, ABA, BBL, LNB, LegaA, GBL, LKL, GLeague, VTB)"
+            : league;
+
     [HttpPost("sync")]
     [ApiKeyAuth]
     [EnableRateLimiting("SyncPolicy")]
@@ -48,9 +53,7 @@ public class PlayersController : ControllerBase
         {
             Message = $"Successfully synced {count} players.",
             SyncedCount = count,
-            LeagueFilter = string.IsNullOrWhiteSpace(league) || league.Equals("all", StringComparison.OrdinalIgnoreCase)
-                ? "ALL (EuroLeague, EuroCup, ACB, BSL, BCL, ABA, BBL, LNB, LegaA, GBL, LKL, GLeague, VTB)"
-                : league,
+            LeagueFilter = FormatLeagueFilter(league),
             SeasonFilter = season ?? "ALL"
         });
     }
@@ -75,9 +78,7 @@ public class PlayersController : ControllerBase
         {
             Message = $"Successfully synced season stats for {count} stint records (Completed seasons are automatically checkpointed in IngestionJobLogs).",
             SyncedCount = count,
-            LeagueFilter = string.IsNullOrWhiteSpace(league) || league.Equals("all", StringComparison.OrdinalIgnoreCase)
-                ? "ALL (EuroLeague, EuroCup, ACB, BSL, BCL, ABA, BBL, LNB, LegaA, GBL, LKL, GLeague, VTB)"
-                : league,
+            LeagueFilter = FormatLeagueFilter(league),
             SeasonFilter = season ?? "ALL",
             ForceResync = force
         });

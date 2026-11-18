@@ -17,6 +17,8 @@ using SmartScout.Application.UseCases.Injuries;
 using SmartScout.Application.UseCases.Players;
 using SmartScout.Application.UseCases.Teams;
 using SmartScout.Domain.Entities;
+using SmartScout.Infrastructure.Data;
+using SmartScout.Infrastructure.Services;
 using Xunit;
 
 namespace SmartScout.UnitTests;
@@ -24,10 +26,12 @@ namespace SmartScout.UnitTests;
 public class Phase2ArchitectureAndHandlersTests
 {
     [Fact]
-    public void ArchitectureBoundary_ApplicationHasNoNpgsql_AndControllersHaveNoInfrastructureDependencies()
+    public void ArchitectureBoundary_ApplicationHasNoNpgsqlOrInfra_AndControllersHaveNoInfrastructureDependencies()
     {
         var applicationRefs = typeof(GetPlayersQueryHandler).Assembly.GetReferencedAssemblies();
         Assert.DoesNotContain(applicationRefs, r => r.Name != null && r.Name.Contains("Npgsql", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(applicationRefs, r => r.Name != null && r.Name.Contains("SmartScout.Infrastructure", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(applicationRefs, r => r.Name != null && r.Name.Contains("SmartScout.Api", StringComparison.OrdinalIgnoreCase));
 
         var apiTypesToCheck = new[]
         {
@@ -207,6 +211,51 @@ public class Phase2ArchitectureAndHandlersTests
         Assert.Equal(3, result.AddedCount);
         Assert.Equal(3, result.TotalWatchlisted);
         Assert.Equal(vBefore + 1, cacheState.Version);
+    }
+
+    [Fact]
+    public void RemainingValidators_EnforceExactBoundaryLimits()
+    {
+        Assert.False(new GetTeamsSummaryQueryValidator().Validate(new GetTeamsSummaryQuery("NBA", 2027, null, 201)).IsValid);
+        Assert.True(new GetTeamsSummaryQueryValidator().Validate(new GetTeamsSummaryQuery("NBA", 2027, null, 200)).IsValid);
+
+        Assert.False(new GetInjuriesSummaryQueryValidator().Validate(new GetInjuriesSummaryQuery(true, 501)).IsValid);
+        Assert.True(new GetInjuriesSummaryQueryValidator().Validate(new GetInjuriesSummaryQuery(true, 500)).IsValid);
+
+        Assert.False(new DeleteScoutBoardCommandValidator().Validate(new DeleteScoutBoardCommand(Guid.Empty)).IsValid);
+        Assert.False(new GetBoardPlayersQueryValidator().Validate(new GetBoardPlayersQuery(Guid.Empty)).IsValid);
+        Assert.False(new TogglePlayerOnBoardCommandValidator().Validate(new TogglePlayerOnBoardCommand(Guid.Empty, Guid.NewGuid())).IsValid);
+        Assert.False(new ToggleWatchlistCommandValidator().Validate(new ToggleWatchlistCommand(Guid.Empty)).IsValid);
+        Assert.False(new SavePlayerNotesCommandValidator().Validate(new SavePlayerNotesCommand(Guid.NewGuid(), new string('Z', 2001))).IsValid);
+        Assert.False(new EnrichPlayerBiosCommandValidator().Validate(new EnrichPlayerBiosCommand(null, 2001)).IsValid);
+    }
+
+    [Fact]
+    public async Task ToggleAndGetWatchlist_And_TeamSqlSearchFilter_WorkCorrectly()
+    {
+        var p1 = new Player(51, "Luka", "Doncic", "PG", "6-7", 230, "DAL", "NBA", "SLO",
+            new DateTime(1999, 2, 28, 0, 0, 0, DateTimeKind.Utc));
+        var db = new Phase2FakeDbContext(new[] { p1 }, Array.Empty<PlayerSeasonStat>(), Array.Empty<PlayerInjury>(), Array.Empty<IngestionJobLog>());
+        var cache = new ScoutingCacheState();
+
+        var toggle = new ToggleWatchlistCommandHandler(db, cache);
+        var res = await toggle.Handle(new ToggleWatchlistCommand(p1.Id), CancellationToken.None);
+        Assert.True(res.IsWatchlisted);
+
+        var list = await new GetWatchlistQueryHandler(db).Handle(new GetWatchlistQuery(), CancellationToken.None);
+        var item = Assert.Single(list);
+        Assert.Equal("Luka Doncic", item.FullName);
+
+        var options = new DbContextOptionsBuilder<SmartScoutDbContext>()
+            .UseNpgsql("Host=localhost;Database=SmartScoutDb;Username=postgres;Password=dummy")
+            .Options;
+        using var npgsqlDb = new SmartScoutDbContext(options);
+        string sql = new PostgresPlayerDirectorySearchFilter()
+            .ApplyTeamSearchFilter(npgsqlDb.SeasonStats.AsNoTracking(), "Fener_100%")
+            .ToQueryString();
+        Assert.Contains("ILIKE", sql);
+        Assert.Contains("ESCAPE '\\'", sql);
+        Assert.Contains("%Fener\\_100\\%%", sql);
     }
 
     private static void Attach(PlayerSeasonStat stat, Player player)
