@@ -16,20 +16,24 @@ public class ComparePlayersQueryHandler : IRequestHandler<ComparePlayersQuery, P
     private readonly ISmartScoutDbContext _dbContext;
     private readonly IPlayerAnalyticsService _analyticsService;
     private readonly IMemoryCache _cache;
+    private readonly IScoutingCacheState? _cacheState;
 
     public ComparePlayersQueryHandler(
         ISmartScoutDbContext dbContext,
         IPlayerAnalyticsService analyticsService,
-        IMemoryCache cache)
+        IMemoryCache cache,
+        IScoutingCacheState? cacheState = null)
     {
         _dbContext = dbContext;
         _analyticsService = analyticsService;
         _cache = cache;
+        _cacheState = cacheState;
     }
 
     public async Task<PlayerComparisonDto> Handle(ComparePlayersQuery request, CancellationToken cancellationToken)
     {
-        string cacheKey = $"comp_{request.PlayerAId}_{request.SeasonA}_{request.PlayerBId}_{request.SeasonB}";
+        long version = _cacheState?.Version ?? 0;
+        string cacheKey = $"comp_v{version}|{request.PlayerAId}|{request.SeasonA}|{request.PlayerBId}|{request.SeasonB}";
         if (_cache.TryGetValue(cacheKey, out PlayerComparisonDto? cached) && cached != null)
         {
             return cached;

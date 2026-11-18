@@ -269,6 +269,11 @@ namespace SmartScout.Infrastructure.Migrations
                     NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("NormalizedName"), "gin");
                     NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("NormalizedName"), new[] { "gin_trgm_ops" });
 
+                    b.HasIndex("TeamName");
+
+                    NpgsqlIndexBuilderExtensions.HasMethod(b.HasIndex("TeamName"), "gin");
+                    NpgsqlIndexBuilderExtensions.HasOperators(b.HasIndex("TeamName"), new[] { "gin_trgm_ops" });
+
                     b.ToTable("Players");
                 });
 
@@ -315,6 +320,8 @@ namespace SmartScout.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("PlayerId");
+
+                    b.HasIndex("Status");
 
                     b.ToTable("PlayerInjuries", (string)null);
                 });
@@ -533,6 +540,8 @@ namespace SmartScout.Infrastructure.Migrations
                         .HasColumnType("numeric");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Season", "League");
 
                     b.HasIndex("PlayerId", "Season", "League", "TeamName", "CompetitionPhase")
                         .IsUnique();

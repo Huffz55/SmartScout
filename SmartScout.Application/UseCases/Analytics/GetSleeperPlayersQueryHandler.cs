@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using SmartScout.Application.Common.Queries;
 using SmartScout.Application.DTOs;
 using SmartScout.Application.Interfaces;
 using SmartScout.Domain.Entities;
@@ -116,10 +117,11 @@ public class GetSleeperPlayersQueryHandler : IRequestHandler<GetSleeperPlayersQu
     {
         if (_cache == null)
         {
-            return await _dbContext.SeasonStats
-                .Include(s => s.Player)
-                .AsNoTracking()
-                .ToListAsync(cancellationToken);
+            return await SeasonStatAnalyticsLoader.LoadProjectedStatsAsync(
+                _dbContext,
+                predicate: null,
+                linkCareerHistory: false,
+                cancellationToken);
         }
 
         string datasetKey = $"sleeper_dataset_v{version}";
@@ -136,10 +138,11 @@ public class GetSleeperPlayersQueryHandler : IRequestHandler<GetSleeperPlayersQu
                 return cached;
             }
 
-            var loaded = await _dbContext.SeasonStats
-                .Include(s => s.Player)
-                .AsNoTracking()
-                .ToListAsync(cancellationToken);
+            var loaded = await SeasonStatAnalyticsLoader.LoadProjectedStatsAsync(
+                _dbContext,
+                predicate: null,
+                linkCareerHistory: false,
+                cancellationToken);
 
             _cache.Set(datasetKey, loaded, new MemoryCacheEntryOptions
             {

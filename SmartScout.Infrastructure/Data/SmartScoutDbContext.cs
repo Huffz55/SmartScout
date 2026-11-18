@@ -81,6 +81,10 @@ public class SmartScoutDbContext : DbContext, ISmartScoutDbContext
                 .HasMethod("gin")
                 .HasOperators("gin_trgm_ops");
 
+            entity.HasIndex(e => e.TeamName)
+                .HasMethod("gin")
+                .HasOperators("gin_trgm_ops");
+
             entity.Property(e => e.FirstName)
                 .IsRequired()
                 .HasMaxLength(100);
@@ -156,6 +160,7 @@ public class SmartScoutDbContext : DbContext, ISmartScoutDbContext
             entity.ToTable("PlayerInjuries");
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.PlayerId);
+            entity.HasIndex(e => e.Status);
             entity.Property(e => e.InjuryType).IsRequired().HasMaxLength(100);
             entity.Property(e => e.Status).HasMaxLength(50).HasDefaultValue("Recovered");
             entity.Property(e => e.GamesMissed).HasDefaultValue(0);
@@ -170,6 +175,8 @@ public class SmartScoutDbContext : DbContext, ISmartScoutDbContext
             // Stint-based composite unique constraint: Player + Season + League + TeamName + CompetitionPhase
             entity.HasIndex(e => new { e.PlayerId, e.Season, e.League, e.TeamName, e.CompetitionPhase })
                 .IsUnique();
+
+            entity.HasIndex(e => new { e.Season, e.League });
 
             entity.Property(e => e.League)
                 .IsRequired()

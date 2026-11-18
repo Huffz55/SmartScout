@@ -608,13 +608,15 @@ public class PlayersController : ControllerBase
     public async Task<IActionResult> SaveNotes(
         Guid id, 
         [FromBody] ScoutNotesDto request, 
-        [FromServices] ISmartScoutDbContext dbContext, 
-        CancellationToken cancellationToken)
+        [FromServices] ISmartScoutDbContext dbContext,
+        [FromServices] IScoutingCacheState? cacheState = null,
+        CancellationToken cancellationToken = default)
     {
         var player = await dbContext.Players.FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
         if (player == null) return NotFound();
         player.SetScoutNotes(request?.Notes);
         await dbContext.SaveChangesAsync(cancellationToken);
+        cacheState?.BumpVersion();
         return Ok(new { scoutNotes = player.ScoutNotes });
     }
 
