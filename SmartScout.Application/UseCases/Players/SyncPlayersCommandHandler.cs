@@ -15,11 +15,16 @@ public class SyncPlayersCommandHandler : IRequestHandler<SyncPlayersCommand, int
 {
     private readonly IEnumerable<IPlayerSyncStrategy> _syncStrategies;
     private readonly ISmartScoutDbContext _dbContext;
+    private readonly IScoutingCacheState? _cacheState;
 
-    public SyncPlayersCommandHandler(IEnumerable<IPlayerSyncStrategy> syncStrategies, ISmartScoutDbContext dbContext)
+    public SyncPlayersCommandHandler(
+        IEnumerable<IPlayerSyncStrategy> syncStrategies,
+        ISmartScoutDbContext dbContext,
+        IScoutingCacheState? cacheState = null)
     {
         _syncStrategies = syncStrategies;
         _dbContext = dbContext;
+        _cacheState = cacheState;
     }
 
     public async Task<int> Handle(SyncPlayersCommand request, CancellationToken cancellationToken)
@@ -114,6 +119,11 @@ public class SyncPlayersCommandHandler : IRequestHandler<SyncPlayersCommand, int
                 // Crucially save changes immediately for each chunk
                 await _dbContext.SaveChangesAsync(cancellationToken);
             }
+        }
+
+        if (totalUpsertedCount > 0)
+        {
+            _cacheState?.BumpVersion();
         }
 
         return totalUpsertedCount;

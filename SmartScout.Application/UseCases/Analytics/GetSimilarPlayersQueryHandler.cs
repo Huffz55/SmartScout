@@ -1,6 +1,6 @@
 using MediatR;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using SmartScout.Application.Common.Queries;
 using SmartScout.Application.DTOs;
 using SmartScout.Application.Interfaces;
 using System;
@@ -16,49 +16,61 @@ public class GetSimilarPlayersQueryHandler : IRequestHandler<GetSimilarPlayersQu
     private readonly ISmartScoutDbContext _dbContext;
     private readonly IPlayerAnalyticsService _analyticsService;
     private readonly IMemoryCache _cache;
+    private readonly IScoutingCacheState? _cacheState;
 
     public GetSimilarPlayersQueryHandler(
         ISmartScoutDbContext dbContext,
         IPlayerAnalyticsService analyticsService,
-        IMemoryCache cache)
+        IMemoryCache cache,
+        IScoutingCacheState? cacheState = null)
     {
         _dbContext = dbContext;
         _analyticsService = analyticsService;
         _cache = cache;
+        _cacheState = cacheState;
     }
 
     public async Task<List<SimilarPlayerDto>> Handle(GetSimilarPlayersQuery request, CancellationToken cancellationToken)
     {
-        string cacheKey = $"sim_{request.PlayerId}_{request.Season}_{request.Top}_{request.MinGamesPlayed}_{request.ExcludeSamePlayer}";
+        string cacheKey = IScoutingCacheState.BuildVersionedKey(
+            _cacheState?.Version ?? 0,
+            "sim",
+            request.PlayerId,
+            request.Season,
+            request.Top,
+            request.MinGamesPlayed,
+            request.ExcludeSamePlayer);
+
         if (_cache.TryGetValue(cacheKey, out List<SimilarPlayerDto>? cached) && cached != null)
         {
             return cached;
         }
 
-        var targetStat = await _dbContext.SeasonStats
-            .Include(s => s.Player)
-            .FirstOrDefaultAsync(s => s.PlayerId == request.PlayerId && s.Season == request.Season, cancellationToken);
+        Guid playerId = request.PlayerId;
+        int season = request.Season;
+        var targetList = await SeasonStatAnalyticsLoader.LoadProjectedStatsAsync(
+            _dbContext,
+            s => s.PlayerId == playerId && s.Season == season,
+            linkCareerHistory: false,
+            cancellationToken);
 
+        var targetStat = targetList
+            .OrderByDescending(s => s.GamesPlayed)
+            .ThenByDescending(s => s.LeagueDifficultyCoefficient)
+            .FirstOrDefault();
         if (targetStat == null || targetStat.Player == null)
         {
             throw new KeyNotFoundException($"Season {request.Season} stats for player ID '{request.PlayerId}' were not found.");
         }
 
-        var query = _dbContext.SeasonStats
-            .AsNoTracking()
-            .Include(s => s.Player)
-            .Where(s => s.GamesPlayed >= request.MinGamesPlayed);
-
-        if (request.ExcludeSamePlayer)
-        {
-            query = query.Where(s => s.PlayerId != request.PlayerId);
-        }
-        else
-        {
-            query = query.Where(s => s.Id != targetStat.Id);
-        }
-
-        var candidates = await query.ToListAsync(cancellationToken);
+        int minGp = request.MinGamesPlayed;
+        Guid targetStatId = targetStat.Id;
+        bool excludeSame = request.ExcludeSamePlayer;
+        var candidates = await SeasonStatAnalyticsLoader.LoadProjectedStatsAsync(
+            _dbContext,
+            s => s.GamesPlayed >= minGp && (excludeSame ? s.PlayerId != playerId : s.Id != targetStatId),
+            linkCareerHistory: false,
+            cancellationToken);
 
         var results = candidates
             .Where(c => c.Player != null)

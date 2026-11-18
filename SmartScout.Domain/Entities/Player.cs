@@ -370,4 +370,61 @@ public class Player
 
         return null;
     }
+
+    public static Player FromAnalyticsProjection(
+        Guid id,
+        int externalApiId,
+        string firstName,
+        string lastName,
+        string fullName,
+        string normalizedName,
+        string? position,
+        string? primaryPosition,
+        string? secondaryPosition,
+        string? height,
+        int? heightCm,
+        int? weightPounds,
+        int? weightKg,
+        int? wingspanCm,
+        int? standingReachCm,
+        int? draftYear,
+        int? draftPick,
+        string? teamName,
+        string league,
+        string? nationality,
+        DateTime? birthDate,
+        int? contractExpirySeason,
+        string? estimatedMarketValueTier,
+        string? agencyName,
+        string dominantHand,
+        bool isWatchlisted) =>
+        new()
+        {
+            Id = id,
+            ExternalApiId = externalApiId,
+            FirstName = firstName,
+            LastName = lastName,
+            FullName = string.IsNullOrEmpty(fullName) ? $"{firstName} {lastName}".Trim() : fullName,
+            NormalizedName = normalizedName,
+            Position = position,
+            PrimaryPosition = primaryPosition,
+            SecondaryPosition = secondaryPosition,
+            Height = height,
+            HeightCm = heightCm,
+            WeightPounds = weightPounds,
+            WeightKg = weightKg,
+            WingspanCm = wingspanCm,
+            StandingReachCm = standingReachCm,
+            DraftYear = draftYear,
+            DraftPick = draftPick,
+            TeamName = teamName,
+            League = league,
+            Nationality = nationality,
+            BirthDate = birthDate,
+            ContractExpirySeason = contractExpirySeason,
+            EstimatedMarketValueTier = estimatedMarketValueTier,
+            AgencyName = agencyName,
+            DominantHand = string.IsNullOrWhiteSpace(dominantHand) ? "Right" : dominantHand,
+            IsWatchlisted = isWatchlisted
+        };
 }
