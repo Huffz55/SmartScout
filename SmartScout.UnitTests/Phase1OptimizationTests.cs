@@ -6,11 +6,14 @@ using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
+using MediatR;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.Extensions.Caching.Memory;
+using SmartScout.Api.Controllers;
 using SmartScout.Application.Common.Queries;
 using SmartScout.Application.Interfaces;
 using SmartScout.Application.Services;
@@ -74,8 +77,11 @@ public class Phase1OptimizationTests
             heightCm: 211,
             weightKg: 129,
             wingspanCm: 221,
+            draftYear: 2014,
+            draftPick: 41,
             externalIdsJson: "{\"nba\":203999}");
         player.SetScoutNotes("Confidential note");
+        player.ToggleWatchlist(true);
         player.UpdateScoutingIntel(standingReachCm: 282, contractExpirySeason: 2028, estimatedMarketValueTier: "Tier 1 • Franchise", agencyName: "BeoBasket", dominantHand: "Right");
 
         var stat = new PlayerSeasonStat(
@@ -95,17 +101,46 @@ public class Phase1OptimizationTests
             trueShootingPct: 0.65m,
             playerEfficiencyRating: 31.2m,
             usagePct: 30.1m,
+            totalReboundPct: 21.4m,
+            assistPct: 44.2m,
+            winShares: 14.8m,
+            boxPlusMinus: 11.7m,
+            pir: 34.5m,
+            foulsDrawn: 6.2m,
+            pointsPer40: 31.4m,
+            assistsPer40: 11.3m,
+            reboundsPer40: 14.3m,
             league: "NBA",
             teamName: "DEN",
+            competitionPhase: "Regular Season",
+            gamesStarted: 60,
+            minutesPlayedTotal: 2070.0m,
+            fgm: 10.4m,
+            fga: 17.9m,
+            fg3m: 1.4m,
+            fg3a: 3.9m,
+            fg2m: 9.0m,
+            fg2a: 14.0m,
+            fg2Pct: 0.64m,
+            ftm: 4.9m,
+            fta: 6.0m,
+            orb: 2.8m,
+            drb: 9.6m,
+            pfCommitted: 2.4m,
+            plusMinus: 8.9m,
+            effectiveFgPct: 0.619m,
+            assistToTurnoverRatio: 3.16m,
+            gameScoreAverage: 26.4m,
             rawScrapedPayload: "{\"heavy\":\"json\"}");
 
         var projectedPlayer = Player.FromAnalyticsProjection(
-            player.Id, player.FirstName, player.LastName, player.FullName, player.NormalizedName,
+            player.Id, player.ExternalApiId, player.FirstName, player.LastName, player.FullName, player.NormalizedName,
             player.Position, player.PrimaryPosition, player.SecondaryPosition,
             player.Height, player.HeightCm, player.WeightPounds, player.WeightKg,
-            player.WingspanCm, player.StandingReachCm, player.TeamName, player.League,
-            player.Nationality, player.BirthDate, player.ContractExpirySeason,
-            player.EstimatedMarketValueTier, player.AgencyName, player.DominantHand, player.IsWatchlisted);
+            player.WingspanCm, player.StandingReachCm, player.DraftYear, player.DraftPick,
+            player.TeamName, player.League, player.Nationality, player.BirthDate,
+            player.ContractExpirySeason, player.EstimatedMarketValueTier, player.AgencyName,
+            player.DominantHand, player.IsWatchlisted);
 
         var projectedStat = PlayerSeasonStat.FromAnalyticsProjection(
             stat.Id, stat.PlayerId, stat.Season, stat.League, stat.TeamName, stat.CompetitionPhase,
@@ -128,11 +163,28 @@ public class Phase1OptimizationTests
         Assert.Null(projectedPlayer.ExternalIdsJson);
         Assert.Null(projectedPlayer.ScoutNotes);
         Assert.Null(projectedStat.RawScrapedPayload);
-        Assert.Equal("Nikola Jokić", projectedPlayer.FullName);
-        Assert.Equal("nikola jokic", projectedPlayer.NormalizedName);
-        Assert.Equal(282, projectedPlayer.StandingReachCm);
+
+        Assert.Equal(player.ExternalApiId, projectedPlayer.ExternalApiId);
+        Assert.Equal(player.FullName, projectedPlayer.FullName);
+        Assert.Equal(player.NormalizedName, projectedPlayer.NormalizedName);
+        Assert.Equal("C", projectedPlayer.PrimaryPosition);
+        Assert.Equal("F", projectedPlayer.SecondaryPosition);
+        Assert.Equal(player.StandingReachCm, projectedPlayer.StandingReachCm);
+        Assert.Equal(2014, projectedPlayer.DraftYear);
+        Assert.Equal(41, projectedPlayer.DraftPick);
+        Assert.Equal("BeoBasket", projectedPlayer.AgencyName);
+        Assert.True(projectedPlayer.IsWatchlisted);
+
+        Assert.Equal(stat.GamesStarted, projectedStat.GamesStarted);
+        Assert.Equal(stat.FieldGoalsMade, projectedStat.FieldGoalsMade);
+        Assert.Equal(stat.TwoPointsMade, projectedStat.TwoPointsMade);
+        Assert.Equal(stat.PlusMinus, projectedStat.PlusMinus);
+        Assert.Equal(stat.WinShares, projectedStat.WinShares);
+        Assert.Equal(stat.BoxPlusMinus, projectedStat.BoxPlusMinus);
+        Assert.Equal(stat.EffectiveFgPct, projectedStat.EffectiveFgPct);
         Assert.Equal(stat.EuroLeagueTransitionIndex, projectedStat.EuroLeagueTransitionIndex);
         Assert.Equal(stat.PtsPer36, projectedStat.PtsPer36);
+        Assert.Equal(stat.StocksPer36, projectedStat.StocksPer36);
         Assert.Same(projectedPlayer, projectedStat.Player);
     }
 
@@ -164,6 +216,10 @@ public class Phase1OptimizationTests
         AttachPlayerToStat(s2027, p1);
 
         var db = new FakeSmartScoutDbContext(new[] { p1 }, new[] { s2026, s2027 });
+
+        var loadedWithoutHistory = await SeasonStatAnalyticsLoader.LoadProjectedStatsAsync(db, linkCareerHistory: false, cancellationToken: CancellationToken.None);
+        Assert.Equal(2, loadedWithoutHistory.Count);
+        Assert.Empty(loadedWithoutHistory[0].Player!.SeasonStats);
 
         var loaded = await SeasonStatAnalyticsLoader.LoadProjectedStatsAsync(db, linkCareerHistory: true, cancellationToken: CancellationToken.None);
 
@@ -272,15 +328,64 @@ public class Phase1OptimizationTests
     }
 
     [Fact]
+    public async Task PlayersController_SaveNotes_BumpsCacheVersion()
+    {
+        var (db, pA, _, _) = BuildSampleAnalyticsDb();
+        var cacheState = new ScoutingCacheState();
+        long initialVersion = cacheState.Version;
+
+        var controller = new PlayersController(new NoOpMediator());
+        var result = await controller.SaveNotes(
+            pA.Id,
+            new PlayersController.ScoutNotesDto("Updated field note"),
+            db,
+            cacheState,
+            CancellationToken.None);
+
+        var ok = Assert.IsType<OkObjectResult>(result);
+        Assert.Equal("Updated field note", pA.ScoutNotes);
+        Assert.Equal(initialVersion + 1, cacheState.Version);
+        Assert.NotNull(ok.Value);
+    }
+
+    [Fact]
     public void GetPlayersQueryHandler_BuildSearchQuerySql_UsesILikeAndNormalizedName()
     {
         using var db = CreateNpgsqlModelContext();
-        string sql = GetPlayersQueryHandler.ApplySearchFilter(db.Players.AsNoTracking(), "Nikola Jokić").ToQueryString();
+        string sql = GetPlayersQueryHandler.ApplySearchFilter(db.Players.AsNoTracking(), "Nikola Jokić_100%", useNpgsqlILike: true).ToQueryString();
 
         Assert.Contains("ILIKE", sql);
+        Assert.Contains("ESCAPE '\\'", sql);
         Assert.Contains("NormalizedName", sql);
         Assert.Contains("TeamName", sql);
+        Assert.Contains("%nikola jokic\\_100\\%%", sql);
         Assert.DoesNotContain("lower(", sql);
+    }
+
+    [Fact]
+    public async Task GetPlayersQueryHandler_Handle_SearchesNormalizedAndTeamFields()
+    {
+        var (db, pA, _, _) = BuildSampleAnalyticsDb();
+        var handler = new GetPlayersQueryHandler(db);
+
+        var byFullName = await handler.Handle(new GetPlayersQuery { Page = 1, PageSize = 10, SearchTerm = "elena prospect" }, CancellationToken.None);
+        Assert.Single(byFullName.Items);
+        Assert.Equal(pA.Id, byFullName.Items.First().Id);
+
+        var byTeam = await handler.Handle(new GetPlayersQuery { Page = 1, PageSize = 10, SearchTerm = "Virtus" }, CancellationToken.None);
+        Assert.Single(byTeam.Items);
+        Assert.Equal("Virtus", byTeam.Items.First().TeamName);
+    }
+
+    private sealed class NoOpMediator : IMediator
+    {
+        public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default) where TNotification : INotification => Task.CompletedTask;
+        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default) => Task.FromResult(default(TResponse)!);
+        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default) where TRequest : IRequest => Task.CompletedTask;
+        public Task<object?> Send(object request, CancellationToken cancellationToken = default) => Task.FromResult<object?>(null);
+        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default) => throw new NotImplementedException();
+        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) => throw new NotImplementedException();
     }
 
     private static (FakeSmartScoutDbContext Db, Player A, Player B, PlayerSeasonStat StatA) BuildSampleAnalyticsDb()

@@ -32,8 +32,13 @@ public class ComparePlayersQueryHandler : IRequestHandler<ComparePlayersQuery, P
 
     public async Task<PlayerComparisonDto> Handle(ComparePlayersQuery request, CancellationToken cancellationToken)
     {
-        long version = _cacheState?.Version ?? 0;
-        string cacheKey = $"comp_v{version}|{request.PlayerAId}|{request.SeasonA}|{request.PlayerBId}|{request.SeasonB}";
+        string cacheKey = IScoutingCacheState.BuildVersionedKey(
+            _cacheState?.Version ?? 0,
+            "comp",
+            request.PlayerAId,
+            request.SeasonA,
+            request.PlayerBId,
+            request.SeasonB);
         if (_cache.TryGetValue(cacheKey, out PlayerComparisonDto? cached) && cached != null)
         {
             return cached;

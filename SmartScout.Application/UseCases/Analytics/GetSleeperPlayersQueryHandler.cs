@@ -44,7 +44,7 @@ public class GetSleeperPlayersQueryHandler : IRequestHandler<GetSleeperPlayersQu
             ? Math.Max(request.Top * 20, 2000)
             : request.Top;
 
-        string rankedKey = $"sleeper_ranked_v{version}|{request.Category ?? ""}|{request.League ?? ""}|{request.Season?.ToString() ?? ""}|{fetchCount}";
+        string rankedKey = IScoutingCacheState.BuildVersionedKey(version, "sleeper_ranked", request.Category ?? "", request.League ?? "", request.Season?.ToString() ?? "", fetchCount);
         List<SleeperPlayerDto>? sleepers = null;
 
         if (_cache != null && _cache.TryGetValue(rankedKey, out List<SleeperPlayerDto>? cachedRanked) && cachedRanked != null)
@@ -115,16 +115,15 @@ public class GetSleeperPlayersQueryHandler : IRequestHandler<GetSleeperPlayersQu
 
     private async Task<List<PlayerSeasonStat>> LoadAllStatsCachedAsync(long version, CancellationToken cancellationToken)
     {
+        Task<List<PlayerSeasonStat>> FetchProjectedAsync() =>
+            SeasonStatAnalyticsLoader.LoadProjectedStatsAsync(_dbContext, predicate: null, linkCareerHistory: false, cancellationToken);
+
         if (_cache == null)
         {
-            return await SeasonStatAnalyticsLoader.LoadProjectedStatsAsync(
-                _dbContext,
-                predicate: null,
-                linkCareerHistory: false,
-                cancellationToken);
+            return await FetchProjectedAsync();
         }
 
-        string datasetKey = $"sleeper_dataset_v{version}";
+        string datasetKey = IScoutingCacheState.BuildVersionedKey(version, "sleeper_dataset");
         if (_cache.TryGetValue(datasetKey, out List<PlayerSeasonStat>? cached) && cached != null)
         {
             return cached;
@@ -138,11 +137,7 @@ public class GetSleeperPlayersQueryHandler : IRequestHandler<GetSleeperPlayersQu
                 return cached;
             }
 
-            var loaded = await SeasonStatAnalyticsLoader.LoadProjectedStatsAsync(
-                _dbContext,
-                predicate: null,
-                linkCareerHistory: false,
-                cancellationToken);
+            var loaded = await FetchProjectedAsync();
 
             _cache.Set(datasetKey, loaded, new MemoryCacheEntryOptions
             {

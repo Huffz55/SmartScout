@@ -33,8 +33,12 @@ public class SmartScoutSearchQueryHandler : IRequestHandler<SmartScoutSearchQuer
 
     public async Task<List<SmartScoutSearchResultDto>> Handle(SmartScoutSearchQuery request, CancellationToken cancellationToken)
     {
-        long version = _cacheState?.Version ?? 0;
-        string cacheKey = $"smart_search_v{version}|{request.Prompt.Trim().ToLowerInvariant()}|{request.Season}|{request.Top}";
+        string cacheKey = IScoutingCacheState.BuildVersionedKey(
+            _cacheState?.Version ?? 0,
+            "smart_search",
+            request.Prompt.Trim().ToLowerInvariant(),
+            request.Season,
+            request.Top);
         if (_cache.TryGetValue(cacheKey, out List<SmartScoutSearchResultDto>? cached) && cached != null)
         {
             return cached;

@@ -32,8 +32,15 @@ public class GetSimilarPlayersQueryHandler : IRequestHandler<GetSimilarPlayersQu
 
     public async Task<List<SimilarPlayerDto>> Handle(GetSimilarPlayersQuery request, CancellationToken cancellationToken)
     {
-        long version = _cacheState?.Version ?? 0;
-        string cacheKey = $"sim_v{version}|{request.PlayerId}|{request.Season}|{request.Top}|{request.MinGamesPlayed}|{request.ExcludeSamePlayer}";
+        string cacheKey = IScoutingCacheState.BuildVersionedKey(
+            _cacheState?.Version ?? 0,
+            "sim",
+            request.PlayerId,
+            request.Season,
+            request.Top,
+            request.MinGamesPlayed,
+            request.ExcludeSamePlayer);
+
         if (_cache.TryGetValue(cacheKey, out List<SimilarPlayerDto>? cached) && cached != null)
         {
             return cached;
@@ -47,7 +54,10 @@ public class GetSimilarPlayersQueryHandler : IRequestHandler<GetSimilarPlayersQu
             linkCareerHistory: false,
             cancellationToken);
 
-        var targetStat = targetList.FirstOrDefault();
+        var targetStat = targetList
+            .OrderByDescending(s => s.GamesPlayed)
+            .ThenByDescending(s => s.LeagueDifficultyCoefficient)
+            .FirstOrDefault();
         if (targetStat == null || targetStat.Player == null)
         {
             throw new KeyNotFoundException($"Season {request.Season} stats for player ID '{request.PlayerId}' were not found.");

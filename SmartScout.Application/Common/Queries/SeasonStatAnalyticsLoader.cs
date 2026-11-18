@@ -77,6 +77,7 @@ public static class SeasonStatAnalyticsLoader
         public decimal? ThreePointRate { get; init; }
         public decimal? EuroLeagueTransitionIndex { get; init; }
 
+        public int PlayerExternalApiId { get; init; }
         public string PlayerFirstName { get; init; } = string.Empty;
         public string PlayerLastName { get; init; } = string.Empty;
         public string PlayerFullName { get; init; } = string.Empty;
@@ -90,6 +91,8 @@ public static class SeasonStatAnalyticsLoader
         public int? PlayerWeightKg { get; init; }
         public int? PlayerWingspanCm { get; init; }
         public int? PlayerStandingReachCm { get; init; }
+        public int? PlayerDraftYear { get; init; }
+        public int? PlayerDraftPick { get; init; }
         public string? PlayerTeamName { get; init; }
         public string PlayerLeague { get; init; } = string.Empty;
         public string? PlayerNationality { get; init; }
@@ -164,7 +167,8 @@ public static class SeasonStatAnalyticsLoader
                 ThreePointRate = s.ThreePointRate,
                 EuroLeagueTransitionIndex = s.EuroLeagueTransitionIndex,
 
-                PlayerFirstName = s.Player!.FirstName,
+                PlayerExternalApiId = s.Player!.ExternalApiId,
+                PlayerFirstName = s.Player.FirstName,
                 PlayerLastName = s.Player.LastName,
                 PlayerFullName = s.Player.FullName,
                 PlayerNormalizedName = s.Player.NormalizedName,
@@ -177,6 +181,8 @@ public static class SeasonStatAnalyticsLoader
                 PlayerWeightKg = s.Player.WeightKg,
                 PlayerWingspanCm = s.Player.WingspanCm,
                 PlayerStandingReachCm = s.Player.StandingReachCm,
+                PlayerDraftYear = s.Player.DraftYear,
+                PlayerDraftPick = s.Player.DraftPick,
                 PlayerTeamName = s.Player.TeamName,
                 PlayerLeague = s.Player.League,
                 PlayerNationality = s.Player.Nationality,
@@ -215,6 +221,7 @@ public static class SeasonStatAnalyticsLoader
             {
                 player = Player.FromAnalyticsProjection(
                     r.PlayerId,
+                    r.PlayerExternalApiId,
                     r.PlayerFirstName,
                     r.PlayerLastName,
                     r.PlayerFullName,
@@ -228,6 +235,8 @@ public static class SeasonStatAnalyticsLoader
                     r.PlayerWeightKg,
                     r.PlayerWingspanCm,
                     r.PlayerStandingReachCm,
+                    r.PlayerDraftYear,
+                    r.PlayerDraftPick,
                     r.PlayerTeamName,
                     r.PlayerLeague,
                     r.PlayerNationality,

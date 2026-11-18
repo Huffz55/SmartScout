@@ -373,6 +373,7 @@ public class Player
 
     public static Player FromAnalyticsProjection(
         Guid id,
+        int externalApiId,
         string firstName,
         string lastName,
         string fullName,
@@ -386,6 +387,8 @@ public class Player
         int? weightKg,
         int? wingspanCm,
         int? standingReachCm,
+        int? draftYear,
+        int? draftPick,
         string? teamName,
         string league,
         string? nationality,
@@ -398,6 +401,7 @@ public class Player
         new()
         {
             Id = id,
+            ExternalApiId = externalApiId,
             FirstName = firstName,
             LastName = lastName,
             FullName = string.IsNullOrEmpty(fullName) ? $"{firstName} {lastName}".Trim() : fullName,
@@ -411,6 +415,8 @@ public class Player
             WeightKg = weightKg,
             WingspanCm = wingspanCm,
             StandingReachCm = standingReachCm,
+            DraftYear = draftYear,
+            DraftPick = draftPick,
             TeamName = teamName,
             League = league,
             Nationality = nationality,
