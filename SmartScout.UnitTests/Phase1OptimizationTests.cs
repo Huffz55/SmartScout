@@ -6,14 +6,11 @@ using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
-using MediatR;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.Extensions.Caching.Memory;
-using SmartScout.Api.Controllers;
 using SmartScout.Application.Common.Queries;
 using SmartScout.Application.Interfaces;
 using SmartScout.Application.Services;
@@ -21,6 +18,7 @@ using SmartScout.Application.UseCases.Analytics;
 using SmartScout.Application.UseCases.Players;
 using SmartScout.Domain.Entities;
 using SmartScout.Infrastructure.Data;
+using SmartScout.Infrastructure.Services;
 using Xunit;
 
 namespace SmartScout.UnitTests;
@@ -328,31 +326,26 @@ public class Phase1OptimizationTests
     }
 
     [Fact]
-    public async Task PlayersController_SaveNotes_BumpsCacheVersion()
+    public async Task SavePlayerNotesCommandHandler_BumpsCacheVersion()
     {
         var (db, pA, _, _) = BuildSampleAnalyticsDb();
         var cacheState = new ScoutingCacheState();
         long initialVersion = cacheState.Version;
 
-        var controller = new PlayersController(new NoOpMediator());
-        var result = await controller.SaveNotes(
-            pA.Id,
-            new PlayersController.ScoutNotesDto("Updated field note"),
-            db,
-            cacheState,
-            CancellationToken.None);
+        var handler = new SavePlayerNotesCommandHandler(db, cacheState);
+        var result = await handler.Handle(new SavePlayerNotesCommand(pA.Id, "Updated field note"), CancellationToken.None);
 
-        var ok = Assert.IsType<OkObjectResult>(result);
         Assert.Equal("Updated field note", pA.ScoutNotes);
+        Assert.Equal("Updated field note", result.ScoutNotes);
         Assert.Equal(initialVersion + 1, cacheState.Version);
-        Assert.NotNull(ok.Value);
     }
 
     [Fact]
-    public void GetPlayersQueryHandler_BuildSearchQuerySql_UsesILikeAndNormalizedName()
+    public void PostgresPlayerDirectorySearchFilter_BuildSearchQuerySql_UsesILikeAndNormalizedName()
     {
         using var db = CreateNpgsqlModelContext();
-        string sql = GetPlayersQueryHandler.ApplySearchFilter(db.Players.AsNoTracking(), "Nikola Jokić_100%", useNpgsqlILike: true).ToQueryString();
+        var filter = new PostgresPlayerDirectorySearchFilter();
+        string sql = filter.ApplySearchFilter(db.Players.AsNoTracking(), "Nikola Jokić_100%").ToQueryString();
 
         Assert.Contains("ILIKE", sql);
         Assert.Contains("ESCAPE '\\'", sql);
@@ -375,17 +368,6 @@ public class Phase1OptimizationTests
         var byTeam = await handler.Handle(new GetPlayersQuery { Page = 1, PageSize = 10, SearchTerm = "Virtus" }, CancellationToken.None);
         Assert.Single(byTeam.Items);
         Assert.Equal("Virtus", byTeam.Items.First().TeamName);
-    }
-
-    private sealed class NoOpMediator : IMediator
-    {
-        public Task Publish(object notification, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default) where TNotification : INotification => Task.CompletedTask;
-        public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default) => Task.FromResult(default(TResponse)!);
-        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default) where TRequest : IRequest => Task.CompletedTask;
-        public Task<object?> Send(object request, CancellationToken cancellationToken = default) => Task.FromResult<object?>(null);
-        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) => throw new NotImplementedException();
     }
 
     private static (FakeSmartScoutDbContext Db, Player A, Player B, PlayerSeasonStat StatA) BuildSampleAnalyticsDb()

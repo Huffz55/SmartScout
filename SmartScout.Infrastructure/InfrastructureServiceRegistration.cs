@@ -2,6 +2,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Polly;
 using SmartScout.Application.Interfaces;
 using SmartScout.Infrastructure.Data;
@@ -46,6 +47,8 @@ public static class InfrastructureServiceRegistration
 
         // Scraper options and dedicated parsing components
         services.Configure<SmartScout.Infrastructure.Options.ScraperOptions>(configuration.GetSection(SmartScout.Infrastructure.Options.ScraperOptions.SectionName));
+        services.AddSingleton<IScraperRuntimeSettings>(sp => sp.GetRequiredService<IOptions<SmartScout.Infrastructure.Options.ScraperOptions>>().Value);
+        services.AddScoped<IPlayerDirectorySearchFilter, PostgresPlayerDirectorySearchFilter>();
         services.AddSingleton<SmartScout.Infrastructure.Services.Scraping.BasketballReferenceUrlBuilder>();
         services.AddSingleton<SmartScout.Infrastructure.Services.Scraping.BasketballReferenceDomParser>();
 
@@ -103,6 +106,7 @@ public static class InfrastructureServiceRegistration
         });
 
         services.AddScoped<LiveSyncCoordinator>();
+        services.AddScoped<ILiveSyncCoordinator>(sp => sp.GetRequiredService<LiveSyncCoordinator>());
 
         return services;
     }

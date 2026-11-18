@@ -1,9 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using SmartScout.Infrastructure.Options;
-using SmartScout.Infrastructure.Services;
+using SmartScout.Application.Interfaces;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,16 +12,16 @@ public class SeasonStatSyncBackgroundService : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<SeasonStatSyncBackgroundService> _logger;
-    private readonly ScraperOptions _options;
+    private readonly IScraperRuntimeSettings _options;
 
     public SeasonStatSyncBackgroundService(
         IServiceScopeFactory scopeFactory,
         ILogger<SeasonStatSyncBackgroundService> logger,
-        IOptions<ScraperOptions> options)
+        IScraperRuntimeSettings options)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
-        _options = options.Value;
+        _options = options;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -64,7 +62,7 @@ public class SeasonStatSyncBackgroundService : BackgroundService
             try
             {
                 using var scope = _scopeFactory.CreateScope();
-                var coordinator = scope.ServiceProvider.GetRequiredService<LiveSyncCoordinator>();
+                var coordinator = scope.ServiceProvider.GetRequiredService<ILiveSyncCoordinator>();
 
                 var cycle = await coordinator.RunSyncCycleAsync(DateTime.UtcNow, stoppingToken);
                 nextDelay = cycle.RecommendedNextDelay;
