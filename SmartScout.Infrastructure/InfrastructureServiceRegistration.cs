@@ -1,7 +1,9 @@
 using System;
+using System.Threading;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Options;
 using Polly;
 using SmartScout.Application.Interfaces;
@@ -93,21 +95,48 @@ public static class InfrastructureServiceRegistration
         // Player Bio & Physicals Enrichment Service (Wikipedia / Wikidata / EuroLeague / BRef)
         services.AddHttpClient<IPlayerBioEnrichmentService, WikipediaBioEnrichmentService>(client =>
         {
-            client.Timeout = TimeSpan.FromSeconds(25);
+            client.Timeout = Timeout.InfiniteTimeSpan;
             client.DefaultRequestHeaders.Add("User-Agent", "SmartScoutAnalytics/1.0 (contact@smartscout.io; automated scouting bot)");
             client.DefaultRequestHeaders.Add("Accept", "application/json");
-        });
+        })
+        .AddStandardResilienceHandler(ConfigureBioEnrichmentResilience)
+        .SelectPipelineByAuthority();
 
         // Live Player Injury Sync Service (ESPN, Basketball-Reference, Rotowire, CBS, Covers)
         services.AddHttpClient<IPlayerInjurySyncService, PlayerInjurySyncService>(client =>
         {
-            client.Timeout = TimeSpan.FromSeconds(25);
+            client.Timeout = Timeout.InfiniteTimeSpan;
             client.DefaultRequestHeaders.Add("Accept", "application/json, text/html");
-        });
+        })
+        .AddStandardResilienceHandler(ConfigureInjurySyncResilience)
+        .SelectPipelineByAuthority();
 
         services.AddScoped<LiveSyncCoordinator>();
         services.AddScoped<ILiveSyncCoordinator>(sp => sp.GetRequiredService<LiveSyncCoordinator>());
 
         return services;
+    }
+
+    internal static void ConfigureBioEnrichmentResilience(HttpStandardResilienceOptions options) =>
+        ConfigureScrapingResilience(options, attemptTimeoutSeconds: 12, totalTimeoutSeconds: 40, minimumThroughput: 15);
+
+    internal static void ConfigureInjurySyncResilience(HttpStandardResilienceOptions options) =>
+        ConfigureScrapingResilience(options, attemptTimeoutSeconds: 10, totalTimeoutSeconds: 35, minimumThroughput: 10);
+
+    private static void ConfigureScrapingResilience(
+        HttpStandardResilienceOptions options,
+        int attemptTimeoutSeconds,
+        int totalTimeoutSeconds,
+        int minimumThroughput)
+    {
+        options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(attemptTimeoutSeconds);
+        options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(totalTimeoutSeconds);
+        options.Retry.MaxRetryAttempts = 2;
+        options.Retry.Delay = TimeSpan.FromSeconds(1);
+        options.Retry.BackoffType = DelayBackoffType.Exponential;
+        options.Retry.UseJitter = true;
+        options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(45);
+        options.CircuitBreaker.MinimumThroughput = minimumThroughput;
+        options.CircuitBreaker.FailureRatio = 0.5;
     }
 }

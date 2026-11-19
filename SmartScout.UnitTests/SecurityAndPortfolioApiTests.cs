@@ -106,6 +106,34 @@ public class SecurityAndPortfolioApiTests
     }
 
     [Fact]
+    public async Task ApiKeyAuth_ShouldRejectQueryStringApiKey_AndRequireHeader()
+    {
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Authentication:ApiKey"] = "unit-test-secret-key"
+        }).Build();
+
+        var attr = new ApiKeyAuthAttribute();
+        var queryOnlyContext = BuildActionContext(config, ctx =>
+        {
+            ctx.Request.QueryString = new QueryString("?apiKey=unit-test-secret-key");
+        });
+
+        bool nextCalled = false;
+        await attr.OnActionExecutionAsync(queryOnlyContext, () =>
+        {
+            nextCalled = true;
+            return Task.FromResult(new ActionExecutedContext(queryOnlyContext, new List<IFilterMetadata>(), queryOnlyContext.Controller));
+        });
+
+        Assert.False(nextCalled);
+        var unauthorized = Assert.IsType<UnauthorizedObjectResult>(queryOnlyContext.Result);
+        string payloadText = unauthorized.Value?.ToString() ?? string.Empty;
+        Assert.Contains(ApiKeyAuthAttribute.ApiKeyHeaderName, payloadText, StringComparison.Ordinal);
+        Assert.DoesNotContain("query parameter", payloadText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void SelectDiverseDemoTargets_ShouldPickAcrossPositionsAndLeagues()
     {
         var candidates = new[]
