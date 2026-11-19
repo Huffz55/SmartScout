@@ -117,29 +117,26 @@ public static class InfrastructureServiceRegistration
         return services;
     }
 
-    internal static void ConfigureBioEnrichmentResilience(HttpStandardResilienceOptions options)
-    {
-        options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(12);
-        options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(40);
-        options.Retry.MaxRetryAttempts = 2;
-        options.Retry.Delay = TimeSpan.FromSeconds(1);
-        options.Retry.BackoffType = DelayBackoffType.Exponential;
-        options.Retry.UseJitter = true;
-        options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(45);
-        options.CircuitBreaker.MinimumThroughput = 15;
-        options.CircuitBreaker.FailureRatio = 0.5;
-    }
+    internal static void ConfigureBioEnrichmentResilience(HttpStandardResilienceOptions options) =>
+        ConfigureScrapingResilience(options, attemptTimeoutSeconds: 12, totalTimeoutSeconds: 40, minimumThroughput: 15);
 
-    internal static void ConfigureInjurySyncResilience(HttpStandardResilienceOptions options)
+    internal static void ConfigureInjurySyncResilience(HttpStandardResilienceOptions options) =>
+        ConfigureScrapingResilience(options, attemptTimeoutSeconds: 10, totalTimeoutSeconds: 35, minimumThroughput: 10);
+
+    private static void ConfigureScrapingResilience(
+        HttpStandardResilienceOptions options,
+        int attemptTimeoutSeconds,
+        int totalTimeoutSeconds,
+        int minimumThroughput)
     {
-        options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(10);
-        options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(35);
+        options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(attemptTimeoutSeconds);
+        options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(totalTimeoutSeconds);
         options.Retry.MaxRetryAttempts = 2;
         options.Retry.Delay = TimeSpan.FromSeconds(1);
         options.Retry.BackoffType = DelayBackoffType.Exponential;
         options.Retry.UseJitter = true;
         options.CircuitBreaker.SamplingDuration = TimeSpan.FromSeconds(45);
-        options.CircuitBreaker.MinimumThroughput = 10;
+        options.CircuitBreaker.MinimumThroughput = minimumThroughput;
         options.CircuitBreaker.FailureRatio = 0.5;
     }
 }

@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Net.Http.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
+using SmartScout.Api.Attributes;
 using SmartScout.Application.UseCases.Boards;
 using SmartScout.Application.UseCases.Teams;
 using SmartScout.Domain.Entities;
@@ -50,26 +51,23 @@ public sealed class SmartScoutPostgresIntegrationTests : IAsyncLifetime
             await db.SaveChangesAsync();
         }
 
-        var jokicResp = await _client.GetAsync("/api/players?search=nikola%20jokic");
-        Assert.Equal(HttpStatusCode.OK, jokicResp.StatusCode);
-        var jokicPayload = await jokicResp.Content.ReadFromJsonAsync<PagedPlayersResponseDto>();
-        Assert.NotNull(jokicPayload);
-        var jokicMatch = Assert.Single(jokicPayload.Items);
+        var jokicMatch = await AssertSingleSearchMatchAsync("nikola%20jokic");
         Assert.Equal("Nikola Jokić", jokicMatch.FullName);
 
-        var sengunResp = await _client.GetAsync("/api/players?search=sengun");
-        Assert.Equal(HttpStatusCode.OK, sengunResp.StatusCode);
-        var sengunPayload = await sengunResp.Content.ReadFromJsonAsync<PagedPlayersResponseDto>();
-        Assert.NotNull(sengunPayload);
-        var sengunMatch = Assert.Single(sengunPayload.Items);
+        var sengunMatch = await AssertSingleSearchMatchAsync("sengun");
         Assert.Equal("Alperen Şengün", sengunMatch.FullName);
 
-        var teamResp = await _client.GetAsync("/api/players?search=nuggets");
-        Assert.Equal(HttpStatusCode.OK, teamResp.StatusCode);
-        var teamPayload = await teamResp.Content.ReadFromJsonAsync<PagedPlayersResponseDto>();
-        Assert.NotNull(teamPayload);
-        var teamMatch = Assert.Single(teamPayload.Items);
+        var teamMatch = await AssertSingleSearchMatchAsync("nuggets");
         Assert.Equal("Denver Nuggets", teamMatch.TeamName);
+    }
+
+    private async Task<PlayerDirectoryItemDto> AssertSingleSearchMatchAsync(string encodedQuery)
+    {
+        var response = await _client.GetAsync($"/api/players?search={encodedQuery}");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var payload = await response.Content.ReadFromJsonAsync<PagedPlayersResponseDto>();
+        Assert.NotNull(payload);
+        return Assert.Single(payload.Items);
     }
 
     [Fact]
@@ -189,13 +187,13 @@ public sealed class SmartScoutPostgresIntegrationTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Unauthorized, queryParamKey.StatusCode);
 
         using var wrongHeaderReq = new HttpRequestMessage(HttpMethod.Post, "/api/players/enrich-bios?limit=0");
-        wrongHeaderReq.Headers.Add("X-Api-Key", "wrong-key");
+        wrongHeaderReq.Headers.Add(ApiKeyAuthAttribute.ApiKeyHeaderName, "wrong-key");
         var wrongKeyResp = await _client.SendAsync(wrongHeaderReq);
         Assert.Equal(HttpStatusCode.Unauthorized, wrongKeyResp.StatusCode);
 
         // Valid header passes ApiKeyAuthAttribute and reaches FluentValidation (limit=0 -> 400 BadRequest, no external HTTP calls)
         using var validHeaderReq = new HttpRequestMessage(HttpMethod.Post, "/api/players/enrich-bios?limit=0");
-        validHeaderReq.Headers.Add("X-Api-Key", SmartScoutWebApplicationFactory.TestApiKey);
+        validHeaderReq.Headers.Add(ApiKeyAuthAttribute.ApiKeyHeaderName, SmartScoutWebApplicationFactory.TestApiKey);
         var validKeyResp = await _client.SendAsync(validHeaderReq);
         Assert.Equal(HttpStatusCode.BadRequest, validKeyResp.StatusCode);
     }

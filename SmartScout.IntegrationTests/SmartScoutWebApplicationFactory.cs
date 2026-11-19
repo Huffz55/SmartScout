@@ -117,6 +117,7 @@ public sealed partial class SmartScoutWebApplicationFactory : WebApplicationFact
 
     private static async Task EnsureTestDatabaseExistsAsync(string connectionString)
     {
+        EnsureNotLiveDatabase(connectionString);
         var targetBuilder = new NpgsqlConnectionStringBuilder(connectionString);
         string targetDbName = targetBuilder.Database!;
         var adminBuilder = new NpgsqlConnectionStringBuilder(connectionString)
