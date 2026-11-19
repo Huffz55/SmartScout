@@ -138,8 +138,9 @@ export async function runComparison() {
     }
 
     const winners = data.categoryWinners || {};
+    const formatDim = (key) => String(key).replace(/([a-z0-9])([A-Z])/g, '$1 $2');
     document.getElementById('comp-winners').innerHTML = Object.entries(winners)
-      .map(([cat, win]) => `<span class="badge badge-sky">${escapeHtml(cat)}: <strong>${escapeHtml(win)}</strong></span>`)
+      .map(([cat, win]) => `<span class="badge badge-sky">${escapeHtml(formatDim(cat))}: <strong>${escapeHtml(win)}</strong></span>`)
       .join('');
 
     renderDualRadar(pA, pB);

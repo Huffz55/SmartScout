@@ -10,7 +10,7 @@ export function setSyncApiKey(key) {
 }
 
 async function requestJson(url, options = {}) {
-  const res = await fetch(url, options);
+  const res = await fetch(url, { credentials: 'same-origin', ...options });
   const text = await res.text();
   let data = null;
   if (text) {
@@ -38,10 +38,10 @@ export function smartSearchApi(prompt, top = 18) {
   return requestJson(`/api/players/smart-search?prompt=${encodeURIComponent(prompt)}&top=${top}`);
 }
 
-export function fetchPlayersApi(page = 1, pageSize = 25, search = '') {
+export function fetchPlayersApi(page = 1, pageSize = 25, search = '', signal) {
   const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (search) params.set('search', search);
-  return requestJson(`/api/players?${params.toString()}`);
+  return requestJson(`/api/players?${params.toString()}`, { signal });
 }
 
 export function fetchPlayerProfileApi(playerId, season) {
@@ -80,11 +80,11 @@ export function deleteBoardApi(boardId) {
   return requestJson(`/api/boards/${boardId}`, { method: 'DELETE' });
 }
 
-export function fetchWatchlistItemsApi(boardId) {
+export function fetchWatchlistItemsApi(boardId, signal) {
   const url = boardId && boardId !== 'default'
     ? `/api/boards/${boardId}/players`
     : '/api/players/watchlist';
-  return requestJson(url);
+  return requestJson(url, { signal });
 }
 
 export function toggleWatchlistItemApi(boardId, playerId) {

@@ -4,6 +4,7 @@ import { escapeHtml, formatNationality, formatTeamName } from '../utils/formatte
 
 let handlers = {};
 let searchTimer = null;
+let directoryAbort = null;
 
 export function initDirectoryView(h) {
   handlers = h;
@@ -39,8 +40,11 @@ export async function fetchDirectory() {
   const infoEl = document.getElementById('directory-page-info');
   if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:28px;color:var(--text-muted)">Loading player directory...</td></tr>`;
 
+  if (directoryAbort) directoryAbort.abort();
+  directoryAbort = new AbortController();
+
   try {
-    const data = await fetchPlayersApi(state.directory.page, state.directory.pageSize, q);
+    const data = await fetchPlayersApi(state.directory.page, state.directory.pageSize, q, directoryAbort.signal);
     state.directory.items = data.items || [];
     state.directory.totalCount = data.totalCount || 0;
     state.directory.totalPages = Math.ceil(state.directory.totalCount / (data.pageSize || state.directory.pageSize)) || 1;
@@ -78,6 +82,7 @@ export async function fetchDirectory() {
       btn.addEventListener('click', () => handlers.openTeamRoster(btn.dataset.openTeam, btn.dataset.league, 2026));
     });
   } catch (err) {
+    if (err.name === 'AbortError') return;
     if (tbody) tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--accent-rose)">Error: ${escapeHtml(err.message)}</td></tr>`;
   }
 }

@@ -17,6 +17,7 @@ import {
 } from '../utils/formatters.js';
 
 let handlers = {};
+let watchlistAbort = null;
 
 const SLOT_COORDS = {
   PG: { left: 'calc(50% - 74px)', top: '198px' },
@@ -120,8 +121,10 @@ async function deleteActiveBoard() {
 export async function fetchWatchlist() {
   const tbody = document.getElementById('watchlist-tbody');
   if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:28px;color:var(--text-muted)">Loading watchlist...</td></tr>`;
+  if (watchlistAbort) watchlistAbort.abort();
+  watchlistAbort = new AbortController();
   try {
-    const items = await fetchWatchlistItemsApi(state.watchlist.activeBoardId);
+    const items = await fetchWatchlistItemsApi(state.watchlist.activeBoardId, watchlistAbort.signal);
     state.watchlist.items = items || [];
     const badge = document.getElementById('nav-watchlist-count');
     if (badge) {
@@ -131,6 +134,7 @@ export async function fetchWatchlist() {
     renderWatchlistTable();
     renderLineupSimulator();
   } catch (err) {
+    if (err.name === 'AbortError') return;
     if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--accent-rose)">Error: ${escapeHtml(err.message)}</td></tr>`;
   }
 }
@@ -317,7 +321,7 @@ export function renderLineupSimulator() {
           <button type="button" data-slot-clear="${pos}" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:11px">✕</button>
         </div>
         <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(p.fullName)}</div>
-        <div style="font-size:10px;color:var(--text-secondary)">${escapeHtml(formatNationality(p.nationality, p.league, p.fullName))}</div>
+        <div style="font-size:10px;color:var(--text-secondary)">${escapeHtml(formatNationality(p.nationality, p.league, p.fullName).replace(/[\u{1F1E6}-\u{1F1FF}]{2}\s*/gu, '').trim())}</div>
       </div>
     `;
   }).join('');
