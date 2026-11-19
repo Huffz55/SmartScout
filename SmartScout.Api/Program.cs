@@ -116,3 +116,5 @@ if (args.Contains("--enrich-all") || args.Contains("--fill-db"))
 }
 
 app.Run();
+
+public partial class Program { }
