@@ -1,6 +1,8 @@
+using SmartScout.Application.Interfaces;
+
 namespace SmartScout.Infrastructure.Options;
 
-public class ScraperOptions
+public class ScraperOptions : IScraperRuntimeSettings
 {
     public const string SectionName = "ScraperSettings";
 

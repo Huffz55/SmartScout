@@ -11,6 +11,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using SmartScout.Api.Attributes;
 using SmartScout.Api.Controllers;
+using SmartScout.Application.UseCases.Players;
 using SmartScout.Domain.Entities;
 using Xunit;
 
@@ -118,7 +119,7 @@ public class SecurityAndPortfolioApiTests
             MakePlayerWithStat("Extra Big", "C", "LegaA", "ITA", 84m, 7)
         };
 
-        var selected = PlayersController.SelectDiverseDemoTargets(candidates, maxCount: 6);
+        var selected = SeedDemoWatchlistCommandHandler.SelectDiverseDemoTargets(candidates, maxCount: 6);
 
         Assert.Equal(6, selected.Count);
         Assert.Equal(6, selected.Select(p => p.Id).Distinct().Count());

@@ -39,27 +39,18 @@ public class Player
     /// Dynamically computed age based on BirthDate and the current UTC date.
     /// Never stored statically in DB; always derived on-the-fly.
     /// </summary>
-    public int? CurrentAge
-    {
-        get
-        {
-            if (!BirthDate.HasValue) return null;
-            var today = DateTime.UtcNow.Date;
-            var dob = BirthDate.Value.Date;
-            int age = today.Year - dob.Year;
-            if (dob > today.AddYears(-age)) age--;
-            return (age >= 14 && age <= 55) ? age : null;
-        }
-    }
+    public int? CurrentAge => CalculateAgeFromBirthDate(BirthDate);
 
     /// <summary>
     /// Computes age relative to a specific reference date (e.g. season end).
     /// </summary>
-    public int? CalculateAgeAt(DateTime referenceDate)
+    public int? CalculateAgeAt(DateTime referenceDate) => CalculateAgeFromBirthDate(BirthDate, referenceDate);
+
+    public static int? CalculateAgeFromBirthDate(DateTime? birthDate, DateTime? referenceDate = null)
     {
-        if (!BirthDate.HasValue) return null;
-        var refDate = referenceDate.Date;
-        var dob = BirthDate.Value.Date;
+        if (!birthDate.HasValue) return null;
+        var refDate = (referenceDate ?? DateTime.UtcNow).Date;
+        var dob = birthDate.Value.Date;
         int age = refDate.Year - dob.Year;
         if (dob > refDate.AddYears(-age)) age--;
         return (age >= 14 && age <= 55) ? age : null;

@@ -13,21 +13,13 @@ using SmartScout.Infrastructure.Options;
 
 namespace SmartScout.Infrastructure.Services;
 
-public record LiveSyncCycleResult(
-    bool InjurySyncExecuted,
-    int InjuryMatchedCount,
-    bool StatSyncExecuted,
-    int StatsUpsertedCount,
-    TimeSpan RecommendedNextDelay,
-    int BioEnrichedCount = 0);
-
 /// <summary>
 /// Coordinates staleness-aware live injury syncing and active-season statistical refreshes
 /// so repeated API restarts do not redundantly re-scrape fresh external feeds.
 /// </summary>
-public class LiveSyncCoordinator
+public class LiveSyncCoordinator : ILiveSyncCoordinator
 {
-    public const string InjuryCheckpointCode = "__LiveInjuries";
+    public const string InjuryCheckpointCode = SyncCheckpointConstants.InjuryCheckpointCode;
 
     private readonly ISmartScoutDbContext _dbContext;
     private readonly IPlayerInjurySyncService _injurySyncService;
