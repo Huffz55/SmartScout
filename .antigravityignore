@@ -1,0 +1,34 @@
+# .NET Build & Test Çıktıları
+**/bin/
+**/obj/
+**/TestResults/
+**/coverage/
+.vs/
+.idea/
+
+# Git & Geçici Worktree Klasörleri
+.git/
+.worktrees/
+
+# Node / Paket Önbellekleri
+**/node_modules/
+**/dist/
+
+# Büyük Veri, Yedek, Rapor ve Medya Dosyaları
+*.sql
+*.dump
+*.bak
+*.csv
+*.parquet
+*.pdf
+*.zip
+*.log
+*.dll
+*.exe
+*.png
+*.jpg
+*.jpeg
+
+# Playwright / Tarayıcı Test Çıktıları
+**/playwright-report/
+**/test-results/
