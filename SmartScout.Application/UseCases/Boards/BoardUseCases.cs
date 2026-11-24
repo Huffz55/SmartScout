@@ -26,7 +26,10 @@ public sealed record BoardPlayerLatestStatDto(
     decimal? Minutes,
     decimal? TrueShootingPct,
     decimal? EuroLeagueTransitionIndex,
-    decimal? StocksPer36);
+    decimal? StocksPer36,
+    decimal? ThreePointRate = null,
+    decimal? PtsPer36 = null,
+    decimal? UsagePct = null);
 
 public sealed record BoardPlayerDto(
     Guid Id,
@@ -190,7 +193,10 @@ public class GetBoardPlayersQueryHandler : IRequestHandler<GetBoardPlayersQuery,
                 e.Player.EstimatedMarketValueTier,
                 e.Player.ContractExpirySeason,
                 LatestStat = e.Player.SeasonStats
-                    .OrderByDescending(s => s.Season)
+                    .OrderByDescending(s => s.EuroLeagueTransitionIndex != null)
+                    .ThenByDescending(s => s.Season)
+                    .ThenByDescending(s => s.GamesPlayed)
+                    .ThenByDescending(s => s.LeagueDifficultyCoefficient)
                     .Select(s => new BoardPlayerLatestStatDto(
                         s.Season,
                         s.Points,
@@ -199,7 +205,12 @@ public class GetBoardPlayersQueryHandler : IRequestHandler<GetBoardPlayersQuery,
                         s.Minutes,
                         s.TrueShootingPct,
                         s.EuroLeagueTransitionIndex,
-                        s.StocksPer36))
+                        s.StocksPer36,
+                        s.ThreePointRate ?? (s.ThreePointsAttempted.HasValue && s.FieldGoalsAttempted.HasValue && s.FieldGoalsAttempted.Value > 0
+                            ? s.ThreePointsAttempted.Value / s.FieldGoalsAttempted.Value
+                            : (decimal?)null),
+                        s.PtsPer36,
+                        s.UsagePct))
                     .FirstOrDefault()
             })
             .ToListAsync(cancellationToken);

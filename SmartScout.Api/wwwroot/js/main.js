@@ -11,7 +11,7 @@ import {
   sendDossierToCompare,
   toggleDossierWatchlist
 } from './components/dossierDrawer.js';
-import { initSleepersView, fetchSleepers } from './components/sleepersView.js';
+import { initSleepersView, fetchSleepers, renderSleepersTable, updateSleeperWatchlistFlag } from './components/sleepersView.js';
 import { initSmartFinderView } from './components/smartFinderView.js';
 import { closeSyncDrawer, initSyncDrawer } from './components/syncDrawer.js';
 import { closeTeamRosterModal, openTeamRosterModal } from './components/teamRosterModal.js';
@@ -37,6 +37,8 @@ export function switchTab(tabId) {
   } else if (tabId === 'watchlist') {
     fetchScoutBoards().then(() => fetchWatchlist());
     renderLineupSimulator();
+  } else if (tabId === 'sleepers' && state.sleepers.filtered.length > 0) {
+    renderSleepersTable();
   }
 }
 
@@ -50,17 +52,31 @@ function handleOpenTeamRoster(team, league, season) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  const syncWatchlistState = async () => {
+    await refreshWatchlistCount();
+    await fetchScoutBoards();
+    if (state.currentTab === 'watchlist') {
+      await fetchWatchlist();
+    } else if (state.currentTab === 'sleepers' && state.sleepers.filtered.length > 0) {
+      renderSleepersTable();
+    }
+  };
+
   const sharedHandlers = {
     openDossier,
     openTeamRoster: handleOpenTeamRoster,
     launchCompare: handleLaunchCompare,
-    switchTab
+    switchTab,
+    onWatchlistMutated: syncWatchlistState
   };
 
   configureDossierHandlers({
     watchlistMutated: () => {
-      refreshWatchlistCount();
-      if (state.currentTab === 'watchlist') fetchWatchlist();
+      if (state.dossier.currentPlayer && (!state.watchlist.activeBoardId || state.watchlist.activeBoardId === 'default')) {
+        const id = state.dossier.currentPlayer.playerId || state.dossier.currentPlayer.id;
+        updateSleeperWatchlistFlag(id, state.dossier.currentPlayer.isWatchlisted);
+      }
+      syncWatchlistState();
     },
     launchCompare: handleLaunchCompare,
     openTeamRoster: handleOpenTeamRoster

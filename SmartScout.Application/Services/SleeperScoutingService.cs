@@ -546,6 +546,9 @@ public class SleeperScoutingService : ISleeperScoutingService
             string resolvedPos = !string.IsNullOrWhiteSpace(player.PrimaryPosition) ? player.PrimaryPosition
                                : !string.IsNullOrWhiteSpace(player.Position) ? player.Position
                                : "F";
+            string? resolvedSecondaryPos = !string.IsNullOrWhiteSpace(player.SecondaryPosition)
+                ? player.SecondaryPosition
+                : Player.ParsePositions(player.Position).Secondary;
 
             string resolvedNat = (!string.IsNullOrWhiteSpace(player.Nationality) && player.Nationality != "INTL")
                                ? player.Nationality
@@ -557,6 +560,7 @@ public class SleeperScoutingService : ISleeperScoutingService
                 PlayerId = player.Id,
                 FullName = !string.IsNullOrWhiteSpace(player.FullName) ? player.FullName : $"{player.FirstName} {player.LastName}".Trim(),
                 Position = resolvedPos,
+                SecondaryPosition = resolvedSecondaryPos,
                 Nationality = resolvedNat,
                 Age = age,
                 Season = maxSeason,
@@ -854,6 +858,9 @@ public class SleeperScoutingService : ISleeperScoutingService
                            : !string.IsNullOrWhiteSpace(player.Position) ? player.Position
                            : !string.IsNullOrWhiteSpace(stat.Player?.Position) ? stat.Player.Position
                            : "F";
+        string? resolvedSecondaryPos = !string.IsNullOrWhiteSpace(player.SecondaryPosition)
+            ? player.SecondaryPosition
+            : Player.ParsePositions(player.Position ?? stat.Player?.Position).Secondary;
 
         string resolvedNat = (!string.IsNullOrWhiteSpace(player.Nationality) && player.Nationality != "INTL")
                            ? player.Nationality
@@ -872,6 +879,7 @@ public class SleeperScoutingService : ISleeperScoutingService
             PlayerId = player.Id,
             FullName = !string.IsNullOrWhiteSpace(player.FullName) ? player.FullName : $"{player.FirstName} {player.LastName}".Trim(),
             Position = resolvedPos,
+            SecondaryPosition = resolvedSecondaryPos,
             Nationality = resolvedNat,
             Age = age,
             Season = stat.Season,

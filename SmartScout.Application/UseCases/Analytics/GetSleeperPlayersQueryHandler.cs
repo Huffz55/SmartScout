@@ -39,7 +39,9 @@ public class GetSleeperPlayersQueryHandler : IRequestHandler<GetSleeperPlayersQu
         long version = _cacheState?.Version ?? 0;
 
         // Fetch full ranked pool before applying post-discovery Age/Position filters so U-24 or position-specific queries are never truncated at global Top-50
-        bool hasPostFilter = request.MaxAge.HasValue || (!string.IsNullOrWhiteSpace(request.Position) && request.Position != "ALL");
+        bool hasPositionFilter = !string.IsNullOrWhiteSpace(request.Position)
+            && !string.Equals(request.Position.Trim(), "ALL", StringComparison.OrdinalIgnoreCase);
+        bool hasPostFilter = request.MaxAge.HasValue || hasPositionFilter;
         int fetchCount = hasPostFilter
             ? Math.Max(request.Top * 20, 2000)
             : request.Top;
@@ -75,11 +77,13 @@ public class GetSleeperPlayersQueryHandler : IRequestHandler<GetSleeperPlayersQu
             filtered = filtered.Where(s => s.Age.HasValue && s.Age.Value <= request.MaxAge.Value);
         }
 
-        // Defensive position filter
-        if (!string.IsNullOrWhiteSpace(request.Position) && request.Position != "ALL")
+        // Defensive position filter (checks both primary and secondary positions for combo players like G-F or PF/C)
+        if (hasPositionFilter)
         {
-            var posKey = request.Position.Trim().ToUpperInvariant();
-            filtered = filtered.Where(s => !string.IsNullOrWhiteSpace(s.Position) && s.Position.ToUpperInvariant().Contains(posKey));
+            var posKey = request.Position!.Trim().ToUpperInvariant();
+            filtered = filtered.Where(s =>
+                (!string.IsNullOrWhiteSpace(s.Position) && s.Position.ToUpperInvariant().Contains(posKey)) ||
+                (!string.IsNullOrWhiteSpace(s.SecondaryPosition) && s.SecondaryPosition.ToUpperInvariant().Contains(posKey)));
         }
 
         // Clone returned DTOs before overlaying live active injuries so shared cache entries stay immutable

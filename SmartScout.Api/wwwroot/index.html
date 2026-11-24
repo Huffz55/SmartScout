@@ -24,7 +24,7 @@
 
       <nav class="nav-tabs" aria-label="Primary">
         <button type="button" class="tab-btn active" data-tab="sleepers" id="nav-sleepers">Sleepers</button>
-        <button type="button" class="tab-btn" data-tab="search" id="nav-search">Smart Finder <span class="badge mono" style="font-size:9.5px;padding:0 4px">⌘K</span></button>
+        <button type="button" class="tab-btn" data-tab="search" id="nav-search">Smart Finder</button>
         <button type="button" class="tab-btn" data-tab="players" id="nav-players">Directory</button>
         <button type="button" class="tab-btn" data-tab="compare" id="nav-compare">Compare</button>
         <button type="button" class="tab-btn" data-tab="watchlist" id="nav-watchlist">
@@ -33,9 +33,10 @@
         </button>
       </nav>
 
-      <button type="button" id="btn-sync-pill" class="sync-pill" title="Open Sync & Admin Drawer">
+      <button type="button" id="btn-sync-pill" class="sync-pill" title="Open Data Sync & Ingestion Admin">
         <span class="sync-dot"></span>
-        <span id="sync-pill-text" class="tabular-nums">Sync Status</span>
+        <i data-lucide="refresh-cw" style="width:12px;height:12px"></i>
+        <span id="sync-pill-text" class="tabular-nums">Data Sync</span>
       </button>
     </div>
   </header>
@@ -72,22 +73,36 @@
           </select>
           <select id="sleepers-season" class="select" aria-label="Season">
             <option value="0">All Seasons</option>
-            <option value="2027">2026-27</option>
-            <option value="2026">2025-26</option>
-            <option value="2025">2024-25</option>
-            <option value="2024">2023-24</option>
+            <option value="2027">2026-27 (2027)</option>
+            <option value="2026">2025-26 (2026)</option>
+            <option value="2025">2024-25 (2025)</option>
+            <option value="2024">2023-24 (2024)</option>
+            <option value="2023">2022-23 (2023)</option>
+            <option value="2022">2021-22 (2022)</option>
+            <option value="2021">2020-21 (2021)</option>
+            <option value="2020">2019-20 (2020)</option>
+            <option value="2019">2018-19 (2019)</option>
           </select>
           <select id="sleepers-position" class="select" aria-label="Position">
-            <option value="ALL">All Pos</option>
-            <option value="G">Guards (G)</option>
-            <option value="F">Forwards (F)</option>
-            <option value="C">Centers (C)</option>
+            <option value="ALL">All Positions</option>
+            <option value="PG">PG</option>
+            <option value="SG">SG</option>
+            <option value="SF">SF</option>
+            <option value="PF">PF</option>
+            <option value="C">C</option>
+            <option value="G">All Guards (G)</option>
+            <option value="F">All Forwards (F)</option>
           </select>
           <select id="sleepers-age" class="select" aria-label="Max Age">
             <option value="ALL">All Ages</option>
+            <option value="20">U20</option>
+            <option value="21">U21</option>
             <option value="22">U22</option>
+            <option value="23">U23</option>
             <option value="24">U24</option>
+            <option value="25">U25</option>
             <option value="26">U26</option>
+            <option value="28">U28</option>
           </select>
         </div>
         <div class="toolbar-group">
@@ -190,6 +205,7 @@
               <th class="num sortable" data-sort="3pct">3P%</th>
               <th class="num sortable" data-sort="stocks36">STK/36</th>
               <th class="num sortable" data-sort="eti">ETI</th>
+              <th class="num sortable sort-active" data-sort="score">Score</th>
               <th style="text-align:right">Category / Actions</th>
             </tr>
           </thead>
@@ -214,10 +230,12 @@
           <button type="button" id="btn-smart-search" class="btn btn-primary">Search</button>
         </div>
         <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px">
+          <button type="button" class="preset-pill" data-smart-preset="domestic yerli turkish 2027 expiring contract rotation player">BSL Domestic Target (TUR)</button>
+          <button type="button" class="preset-pill" data-smart-preset="buy low bounce back candidate prior peak high efficiency">Buy-Low Bounce-Back</button>
+          <button type="button" class="preset-pill" data-smart-preset="euroleague high pressure full court press disruptor steal low turnover">EuroLeague Disruptor</button>
+          <button type="button" class="preset-pill" data-smart-preset="U24 205+ cm 38%+ 3pt stretch big low foul">5-Out Stretch Big</button>
           <button type="button" class="preset-pill" data-smart-preset="U23 3&D wing shooting over 38% 3P">U23 3&amp;D Wing &gt;38% 3P</button>
-          <button type="button" class="preset-pill" data-smart-preset="Floor general point guard with high assist to turnover ratio">High AST/TOV Floor General</button>
-          <button type="button" class="preset-pill" data-smart-preset="Rim protector center with high blocks and rebounding">Rim Protector Center</button>
-          <button type="button" class="preset-pill" data-smart-preset="Stretch four forward over 60% TS">Stretch 4 (&gt;60% TS)</button>
+          <button type="button" class="preset-pill" data-smart-preset="Floor general point guard high assist low turnover">High AST/TOV Floor General</button>
           <span id="smart-count" class="tabular-nums" style="margin-left:auto;font-size:11.5px;color:var(--text-secondary)"></span>
         </div>
         <div id="smart-constraints" style="display:flex;flex-wrap:wrap;gap:6px"></div>
@@ -289,20 +307,32 @@
             <input id="compare-search-a" class="input" style="width:100%" type="text" placeholder="Player A..." autocomplete="off" />
             <div id="compare-results-a" class="search-dropdown-menu hidden"></div>
           </div>
-          <select id="compare-season-a" class="select" style="width:92px">
-            <option value="2027">2027</option>
-            <option value="2026" selected>2026</option>
-            <option value="2025">2025</option>
+          <select id="compare-season-a" class="select" style="width:128px" aria-label="Player A Season">
+            <option value="2027" selected>2026-27 (2027)</option>
+            <option value="2026">2025-26 (2026)</option>
+            <option value="2025">2024-25 (2025)</option>
+            <option value="2024">2023-24 (2024)</option>
+            <option value="2023">2022-23 (2023)</option>
+            <option value="2022">2021-22 (2022)</option>
+            <option value="2021">2020-21 (2021)</option>
+            <option value="2020">2019-20 (2020)</option>
+            <option value="2019">2018-19 (2019)</option>
           </select>
           <span style="color:var(--text-muted);font-weight:600">vs</span>
           <div class="search-dropdown-wrap" style="min-width:220px;flex:1">
             <input id="compare-search-b" class="input" style="width:100%" type="text" placeholder="Player B..." autocomplete="off" />
             <div id="compare-results-b" class="search-dropdown-menu hidden"></div>
           </div>
-          <select id="compare-season-b" class="select" style="width:92px">
-            <option value="2027">2027</option>
-            <option value="2026" selected>2026</option>
-            <option value="2025">2025</option>
+          <select id="compare-season-b" class="select" style="width:128px" aria-label="Player B Season">
+            <option value="2027" selected>2026-27 (2027)</option>
+            <option value="2026">2025-26 (2026)</option>
+            <option value="2025">2024-25 (2025)</option>
+            <option value="2024">2023-24 (2024)</option>
+            <option value="2023">2022-23 (2023)</option>
+            <option value="2022">2021-22 (2022)</option>
+            <option value="2021">2020-21 (2021)</option>
+            <option value="2020">2019-20 (2020)</option>
+            <option value="2019">2018-19 (2019)</option>
           </select>
         </div>
         <div class="toolbar-group">
@@ -434,19 +464,19 @@
   <div id="dossier-drawer" class="drawer-backdrop hidden">
     <aside class="drawer-panel" role="dialog" aria-label="Player Scouting Dossier">
       <div class="drawer-header">
-        <div>
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
-            <button type="button" id="dossier-back-btn" class="btn btn-sm hidden">← Back</button>
-            <span id="dossier-crumb" style="font-size:11px;color:var(--text-muted)">Player</span>
+        <div style="flex:1;min-width:0">
+          <div id="dossier-nav-row" class="hidden" style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <button type="button" id="dossier-back-btn" class="btn btn-sm">← Back</button>
+            <span id="dossier-crumb" style="font-size:11px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
           </div>
-          <div style="display:flex;align-items:center;gap:8px">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <h2 id="dossier-name" style="margin:0;font-size:17px;font-weight:700">Player Name</h2>
             <span id="dossier-pos" class="badge badge-sky">POS</span>
             <span id="dossier-archetype" class="badge badge-emerald">Archetype</span>
           </div>
           <div id="dossier-subtitle" style="font-size:12px;color:var(--text-secondary);margin-top:4px"></div>
         </div>
-        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end">
+        <div class="drawer-actions">
           <button type="button" id="dossier-film-btn" class="btn btn-sm">Film</button>
           <button type="button" id="dossier-compare-btn" class="btn btn-sm">Compare</button>
           <button type="button" id="dossier-watchlist-btn" class="btn btn-sm">☆ Watchlist</button>
@@ -628,22 +658,30 @@
           <div class="panel-elevated" style="padding:10px"><span class="field-label">DB Coverage</span><strong id="sync-stat-coverage">—</strong></div>
         </div>
 
-        <div class="toolbar">
-          <form class="toolbar-group" style="flex:1" onsubmit="return false;">
-            <input id="sync-api-key-input" class="input" style="flex:1;min-width:180px" type="password" autocomplete="off" placeholder="X-Api-Key for sync endpoints..." />
+        <div class="toolbar sync-toolbar">
+          <form class="sync-apikey-row" onsubmit="return false;">
+            <input id="sync-api-key-input" class="input" type="password" autocomplete="off" placeholder="X-Api-Key for sync endpoints..." />
             <button type="button" id="btn-save-apikey" class="btn btn-sm">Save Key</button>
             <button type="button" id="btn-clear-apikey" class="btn btn-sm">Clear</button>
-            <span id="sync-apikey-status" class="badge badge-amber">Key Required</span>
+            <span id="sync-apikey-status" class="badge badge-amber" style="flex-shrink:0">Key Required</span>
           </form>
-          <div class="toolbar-group">
-            <select id="sync-season-select" class="select">
+          <div class="toolbar-group" style="justify-content:space-between;width:100%">
+            <select id="sync-season-select" class="select" aria-label="Sync Season">
               <option value="2027" selected>2026-27 (2027)</option>
               <option value="2026">2025-26 (2026)</option>
               <option value="2025">2024-25 (2025)</option>
+              <option value="2024">2023-24 (2024)</option>
+              <option value="2023">2022-23 (2023)</option>
+              <option value="2022">2021-22 (2022)</option>
+              <option value="2021">2020-21 (2021)</option>
+              <option value="2020">2019-20 (2020)</option>
+              <option value="2019">2018-19 (2019)</option>
             </select>
-            <button type="button" id="btn-sync-run" class="btn btn-primary">Sync Selected</button>
-            <button type="button" id="btn-enrich-bios" class="btn">Enrich Bios (50)</button>
-            <button type="button" id="btn-sync-injuries" class="btn">Sync Injuries</button>
+            <div class="toolbar-group">
+              <button type="button" id="btn-sync-run" class="btn btn-primary">Sync Selected</button>
+              <button type="button" id="btn-enrich-bios" class="btn">Enrich Bios (50)</button>
+              <button type="button" id="btn-sync-injuries" class="btn">Sync Injuries</button>
+            </div>
           </div>
         </div>
 

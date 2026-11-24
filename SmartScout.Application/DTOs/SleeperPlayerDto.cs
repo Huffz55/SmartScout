@@ -8,6 +8,7 @@ public class SleeperPlayerDto
     public Guid PlayerId { get; set; }
     public string FullName { get; set; } = string.Empty;
     public string? Position { get; set; }
+    public string? SecondaryPosition { get; set; }
     public string? Nationality { get; set; }
     public int? Age { get; set; }
     public int Season { get; set; }

@@ -58,9 +58,10 @@ export function initWatchlistView(h) {
 export async function refreshWatchlistCount() {
   try {
     const items = await fetchWatchlistItemsApi(state.watchlist.activeBoardId);
+    state.watchlist.items = items || [];
     const badge = document.getElementById('nav-watchlist-count');
     if (!badge) return;
-    const count = (items || []).length;
+    const count = state.watchlist.items.length;
     badge.textContent = String(count);
     badge.classList.toggle('hidden', count === 0);
   } catch {
@@ -140,11 +141,16 @@ export async function fetchWatchlist() {
 }
 
 async function seedDemoWatchlist() {
+  const btn = document.getElementById('btn-watchlist-seed');
+  if (btn) btn.disabled = true;
   try {
-    await seedDemoWatchlistApi();
+    await seedDemoWatchlistApi(state.watchlist.activeBoardId);
+    await fetchScoutBoards();
     await fetchWatchlist();
   } catch (err) {
     alert(`Seed demo failed: ${err.message}`);
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -174,8 +180,9 @@ function renderWatchlistTable() {
   }
 
   tbody.innerHTML = filtered.map(p => {
-    const rawSeason = p.latestStat?.season || 2026;
+    const rawSeason = p.latestStat?.season || 2027;
     const rawEti = p.euroLeagueTransitionIndex ?? p.latestStat?.euroLeagueTransitionIndex;
+    const rawTpr = p.threePointRate ?? p.latestStat?.threePointRate;
     const rawS36 = p.stocksPer36 ?? p.latestStat?.stocksPer36;
     const rawPos = p.position || p.primaryPosition || 'F';
     const teamDisplay = formatTeamName(p.teamName, p.league);
@@ -192,7 +199,7 @@ function renderWatchlistTable() {
         <td class="center"><span class="badge">${escapeHtml(rawPos)}</span></td>
         <td class="center mono">${escapeHtml(natDisplay)}</td>
         <td class="num" style="color:var(--accent-sky);font-weight:600">${numFmt(rawEti)}</td>
-        <td class="num">${pctFmt(p.threePointRate, 0)}</td>
+        <td class="num">${pctFmt(rawTpr, 0)}</td>
         <td class="num">${numFmt(rawS36)}</td>
         <td style="font-size:11px;color:var(--text-secondary)">${escapeHtml(p.estimatedMarketValueTier || 'Tier 4')}</td>
         <td style="text-align:right">
@@ -218,6 +225,7 @@ function renderWatchlistTable() {
   tbody.querySelectorAll('[data-remove-watch]').forEach(btn => {
     btn.addEventListener('click', async () => {
       await toggleWatchlistItemApi(state.watchlist.activeBoardId, btn.dataset.removeWatch);
+      await fetchScoutBoards();
       fetchWatchlist();
     });
   });
@@ -281,8 +289,15 @@ export function renderLineupSimulator() {
       return nat.includes('TUR') || nat.includes('Turkey');
     }).length;
     const intlCount = active.length - turCount;
-    const totalUsg = active.reduce((acc, p) => acc + (p.usagePct || (p.ptsPer36 ? p.ptsPer36 * 0.95 : 19.5)), 0);
-    const avgTpr = active.reduce((acc, p) => acc + (p.threePointRate != null ? p.threePointRate * 100 : 34), 0) / active.length;
+    const totalUsg = active.reduce((acc, p) => {
+      const usg = p.usagePct ?? p.latestStat?.usagePct;
+      const pts36 = p.ptsPer36 ?? p.latestStat?.ptsPer36;
+      return acc + (usg || (pts36 ? pts36 * 0.95 : 19.5));
+    }, 0);
+    const avgTpr = active.reduce((acc, p) => {
+      const tpr = p.threePointRate ?? p.latestStat?.threePointRate;
+      return acc + (tpr != null ? tpr * 100 : 34);
+    }, 0) / active.length;
 
     if (quotaEl) {
       quotaEl.className = intlCount <= 4 ? 'badge badge-emerald' : 'badge badge-rose';
@@ -321,7 +336,7 @@ export function renderLineupSimulator() {
           <button type="button" data-slot-clear="${pos}" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:11px">✕</button>
         </div>
         <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(p.fullName)}</div>
-        <div style="font-size:10px;color:var(--text-secondary)">${escapeHtml(formatNationality(p.nationality, p.league, p.fullName).replace(/[\u{1F1E6}-\u{1F1FF}]{2}\s*/gu, '').trim())}</div>
+        <div style="font-size:10px;color:var(--text-secondary)">${escapeHtml(formatNationality(p.nationality, p.league, p.fullName))}</div>
       </div>
     `;
   }).join('');

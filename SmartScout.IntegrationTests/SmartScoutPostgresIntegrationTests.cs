@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using SmartScout.Api.Attributes;
 using SmartScout.Application.UseCases.Boards;
+using SmartScout.Application.UseCases.Players;
 using SmartScout.Application.UseCases.Teams;
 using SmartScout.Domain.Entities;
 using SmartScout.Infrastructure.Data;
@@ -196,5 +197,69 @@ public sealed class SmartScoutPostgresIntegrationTests : IAsyncLifetime
         validHeaderReq.Headers.Add(ApiKeyAuthAttribute.ApiKeyHeaderName, SmartScoutWebApplicationFactory.TestApiKey);
         var validKeyResp = await _client.SendAsync(validHeaderReq);
         Assert.Equal(HttpStatusCode.BadRequest, validKeyResp.StatusCode);
+    }
+
+    [Fact]
+    public async Task SeedDemoWatchlist_WithCustomBoard_SeedsBoardEntries_Returns404WhenMissing_AndPreservesPrimaryEti()
+    {
+        var p1 = new Player(4001, "Maxime", "Raynaud", "C", "7-1", 240, "SAC", "NBA", "FRA",
+            new DateTime(2003, 4, 7, 0, 0, 0, DateTimeKind.Utc), 216, 109);
+        var p2 = new Player(4002, "Guard", "Euro", "PG", "6-3", 190, "Fenerbahçe", "EuroLeague", "TUR",
+            new DateTime(2002, 5, 12, 0, 0, 0, DateTimeKind.Utc), 191, 86);
+
+        var cameo = new PlayerSeasonStat(p1.Id, 2026, 1, 37.0m, 14.0m, 2.0m, 8.0m, 1.0m, 1.0m,
+            0.53m, 0.50m, 0.80m, 2.0m, league: "GLeague", teamName: "STO", fgm: 8.0m, fga: 15.0m, fg3m: 1.0m, fg3a: 2.0m);
+        var nbaMain = new PlayerSeasonStat(p1.Id, 2026, 74, 26.5m, 11.2m, 1.8m, 6.8m, 0.6m, 0.7m,
+            0.52m, 0.34m, 0.78m, 1.1m, league: "NBA", teamName: "SAC", fgm: 4.7m, fga: 9.1m, fg3m: 0.34m, fg3a: 1.0m);
+        var guardStat = new PlayerSeasonStat(p2.Id, 2027, 22, 24.0m, 12.5m, 5.1m, 2.8m, 1.4m, 0.1m,
+            0.48m, 0.40m, 0.86m, 1.5m, league: "EuroLeague", teamName: "FEN", fgm: 4.3m, fga: 9.0m, fg3m: 1.8m, fg3a: 4.5m);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SmartScoutDbContext>();
+            db.Players.AddRange(p1, p2);
+            db.SeasonStats.AddRange(cameo, nbaMain, guardStat);
+            await db.SaveChangesAsync();
+        }
+
+        // Nonexistent boardId -> 404
+        var missingResp = await _client.PostAsync($"/api/players/watchlist/seed-demo?boardId={Guid.NewGuid()}", content: null);
+        Assert.Equal(HttpStatusCode.NotFound, missingResp.StatusCode);
+
+        // Create custom board
+        var createResp = await _client.PostAsJsonAsync("/api/boards", new { name = "Demo Seed Board", ownerName = "Scout" });
+        Assert.Equal(HttpStatusCode.OK, createResp.StatusCode);
+        var board = await createResp.Content.ReadFromJsonAsync<ScoutBoardSummaryDto>();
+        Assert.NotNull(board);
+
+        // Seed via query string
+        var seedResp = await _client.PostAsync($"/api/players/watchlist/seed-demo?boardId={board.Id}", content: null);
+        Assert.Equal(HttpStatusCode.OK, seedResp.StatusCode);
+        var seedData = await seedResp.Content.ReadFromJsonAsync<SeedDemoWatchlistResultDto>();
+        Assert.NotNull(seedData);
+        Assert.Equal(2, seedData.AddedCount);
+        Assert.Equal(2, seedData.TotalWatchlisted);
+
+        // Re-seed via JSON body -> idempotent (no duplicates added)
+        var reseedResp = await _client.PostAsJsonAsync("/api/players/watchlist/seed-demo", new { boardId = board.Id });
+        Assert.Equal(HttpStatusCode.OK, reseedResp.StatusCode);
+        var reseedData = await reseedResp.Content.ReadFromJsonAsync<SeedDemoWatchlistResultDto>();
+        Assert.NotNull(reseedData);
+        Assert.Equal(0, reseedData.AddedCount);
+        Assert.Equal(2, reseedData.TotalWatchlisted);
+
+        // Verify board players preserve primary 74-GP ETI and ThreePointRate
+        var boardPlayers = await _client.GetFromJsonAsync<List<BoardPlayerDto>>($"/api/boards/{board.Id}/players");
+        Assert.NotNull(boardPlayers);
+        Assert.Equal(2, boardPlayers.Count);
+        var raynaud = boardPlayers.Find(x => x.FullName == "Maxime Raynaud");
+        Assert.NotNull(raynaud?.LatestStat);
+        Assert.Equal(98.0m, raynaud!.LatestStat!.EuroLeagueTransitionIndex);
+        Assert.Equal(0.110m, raynaud.LatestStat.ThreePointRate);
+
+        // Default watchlist remains empty
+        var defaultWatchlist = await _client.GetFromJsonAsync<List<WatchlistPlayerDto>>("/api/players/watchlist");
+        Assert.NotNull(defaultWatchlist);
+        Assert.Empty(defaultWatchlist);
     }
 }

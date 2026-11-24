@@ -232,7 +232,7 @@ public class Player
         return sb.ToString().TrimEnd().Normalize(NormalizationForm.FormC).ToLowerInvariant();
     }
 
-    private static (string? Primary, string? Secondary) ParsePositions(string? position)
+    public static (string? Primary, string? Secondary) ParsePositions(string? position)
     {
         if (string.IsNullOrWhiteSpace(position) || position.Equals("Unknown", StringComparison.OrdinalIgnoreCase))
             return (null, null);

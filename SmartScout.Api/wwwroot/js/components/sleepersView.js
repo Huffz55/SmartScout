@@ -1,4 +1,4 @@
-import { fetchSleepersApi } from '../api.js';
+import { fetchSleepersApi, toggleWatchlistItemApi } from '../api.js';
 import { state } from '../state.js';
 import { exportSleepersCsv } from '../utils/csv.js';
 import {
@@ -62,14 +62,14 @@ export async function fetchSleepers() {
   const maxAge = document.getElementById('sleepers-age')?.value || 'ALL';
 
   const tbody = document.getElementById('sleepers-tbody');
-  if (tbody) tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;padding:28px;color:var(--text-muted)">Scanning sleeper candidates...</td></tr>`;
+  if (tbody) tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;padding:28px;color:var(--text-muted)">Scanning sleeper candidates...</td></tr>`;
 
   try {
     state.sleepers.raw = await fetchSleepersApi({ season, category, league, position, maxAge, top: 100 });
     state.sleepers.page = 1;
     applySleeperFilters();
   } catch (err) {
-    if (tbody) tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;padding:24px;color:var(--accent-rose)">Error: ${escapeHtml(err.message)}</td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;padding:24px;color:var(--accent-rose)">Error: ${escapeHtml(err.message)}</td></tr>`;
   }
 }
 
@@ -84,10 +84,8 @@ export function applySleeperFilters() {
 
   let list = state.sleepers.raw.filter(p => {
     if (position !== 'ALL') {
-      const pos = (p.position || '').toUpperCase();
-      if (position === 'G' && !pos.includes('G')) return false;
-      if (position === 'F' && !pos.includes('F')) return false;
-      if (position === 'C' && !pos.includes('C')) return false;
+      const combinedPos = `${p.position || ''} ${p.secondaryPosition || ''}`.toUpperCase();
+      if (!combinedPos.includes(position.toUpperCase())) return false;
     }
     if (maxAge !== 'ALL') {
       const cap = parseInt(maxAge, 10);
@@ -135,7 +133,7 @@ function sortByColumn(key) {
   applySleeperFilters();
 }
 
-function renderSleepersTable() {
+export function renderSleepersTable() {
   const tbody = document.getElementById('sleepers-tbody');
   const countEl = document.getElementById('sleepers-count');
   const pageInfo = document.getElementById('sleepers-page-info');
@@ -157,20 +155,38 @@ function renderSleepersTable() {
   });
 
   if (slice.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="12" style="text-align:center;padding:28px;color:var(--text-muted)">No prospects match the active filters.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="13" style="text-align:center;padding:28px;color:var(--text-muted)">No prospects match the active filters.</td></tr>`;
     return;
   }
 
+  const isCustomBoard = state.watchlist.activeBoardId && state.watchlist.activeBoardId !== 'default';
+  const boardMemberIds = isCustomBoard ? new Set((state.watchlist.items || []).map(x => x.id)) : null;
+
   tbody.innerHTML = slice.map(p => {
     const teamDisplay = formatTeamName(p.teamName, p.league);
+    const activeSeason = p.season || 2027;
+    const isWatchlisted = isCustomBoard ? boardMemberIds.has(p.playerId) : Boolean(p.isWatchlisted);
+    const rawInjStatus = p.activeInjuryStatus ? String(p.activeInjuryStatus).trim() : '';
+    const injLower = rawInjStatus.toLowerCase();
+    const injLabel = !rawInjStatus
+      ? ''
+      : (injLower === 'out' || injLower.startsWith('expected to be out'))
+        ? 'Out'
+        : rawInjStatus.length > 14
+          ? 'Injured'
+          : rawInjStatus;
+    const injTitle = p.activeInjuryDetail ? `${rawInjStatus}: ${p.activeInjuryDetail}` : rawInjStatus;
+
     return `
       <tr>
         <td>
-          <button type="button" class="player-link" data-open-player="${escapeHtml(p.playerId)}" data-season="${p.season || 2026}">${escapeHtml(p.fullName)}</button>
+          <button type="button" class="player-link" data-open-player="${escapeHtml(p.playerId)}" data-season="${activeSeason}">${escapeHtml(p.fullName)}</button>
           <span style="color:var(--text-muted);font-size:11px;margin-left:6px">${p.age ? 'U' + p.age : ''}</span>
+          ${p.isTwoWayPlayer ? `<span class="badge badge-amber" style="margin-left:4px;font-size:11px;padding:1px 5px" title="${escapeHtml(p.parentTeam ? '2-Way: ' + p.parentTeam : 'Two-Way Contract')}">2-Way</span>` : ''}
+          ${rawInjStatus ? `<span class="badge badge-rose" style="margin-left:4px;font-size:11px;padding:1px 5px" title="${escapeHtml(injTitle)}">${escapeHtml(injLabel)}</span>` : ''}
         </td>
         <td>
-          <button type="button" class="team-link" data-open-team="${escapeHtml(p.teamName || '')}" data-league="${escapeHtml(p.league || '')}" data-season="${p.season || 2026}">${escapeHtml(teamDisplay)}</button>
+          <button type="button" class="team-link" data-open-team="${escapeHtml(p.teamName || '')}" data-league="${escapeHtml(p.league || '')}" data-season="${activeSeason}">${escapeHtml(teamDisplay)}</button>
         </td>
         <td><span class="badge badge-sky">${escapeHtml(p.league || '—')}</span></td>
         <td class="center"><span class="badge">${escapeHtml(p.position || '—')}</span></td>
@@ -181,12 +197,14 @@ function renderSleepersTable() {
         <td class="num">${pctFmt(p.fg3Pct)}</td>
         <td class="num">${numFmt(p.stocksPer36)}</td>
         <td class="num" style="color:var(--accent-sky);font-weight:600">${numFmt(p.euroLeagueTransitionIndex)}</td>
+        <td class="num" style="color:var(--accent-emerald);font-weight:700">${numFmt(p.sleeperScore)}</td>
         <td>
           <div style="display:flex;align-items:center;gap:4px;justify-content:flex-end">
             <span class="badge ${getCategoryBadgeClass(p.sleeperCategory)}">${escapeHtml(formatCategory(p.sleeperCategory))}</span>
-            <button type="button" class="btn btn-sm btn-icon" title="Compare" data-cmp-id="${escapeHtml(p.playerId)}" data-cmp-name="${escapeHtml(p.fullName)}" data-cmp-season="${p.season || 2026}">⇄</button>
+            <button type="button" class="btn btn-sm btn-icon ${isWatchlisted ? 'btn-amber' : ''}" title="${isWatchlisted ? 'Remove from Watchlist' : 'Add to Watchlist'}" aria-label="Toggle Watchlist" aria-pressed="${isWatchlisted}" data-watch-id="${escapeHtml(p.playerId)}">${isWatchlisted ? '★' : '☆'}</button>
+            <button type="button" class="btn btn-sm btn-icon" title="Compare" data-cmp-id="${escapeHtml(p.playerId)}" data-cmp-name="${escapeHtml(p.fullName)}" data-cmp-season="${activeSeason}">⇄</button>
             <button type="button" class="btn btn-sm btn-icon" title="Film Room" data-film-name="${escapeHtml(p.fullName)}" data-film-team="${escapeHtml(teamDisplay)}" data-film-league="${escapeHtml(p.league || '')}">▶</button>
-            <a class="btn btn-sm btn-icon btn-emerald" title="PDF Report" href="/api/players/${encodeURIComponent(p.playerId)}/report.pdf?season=${p.season || 2026}" target="_blank">PDF</a>
+            <a class="btn btn-sm btn-icon btn-emerald" title="PDF Report" href="/api/players/${encodeURIComponent(p.playerId)}/report.pdf?season=${activeSeason}" target="_blank">PDF</a>
           </div>
         </td>
       </tr>
@@ -199,12 +217,38 @@ function renderSleepersTable() {
   tbody.querySelectorAll('[data-open-team]').forEach(btn => {
     btn.addEventListener('click', () => handlers.openTeamRoster(btn.dataset.openTeam, btn.dataset.league, Number(btn.dataset.season)));
   });
+  tbody.querySelectorAll('[data-watch-id]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const playerId = btn.dataset.watchId;
+      if (!playerId) return;
+      btn.disabled = true;
+      try {
+        const res = await toggleWatchlistItemApi(state.watchlist.activeBoardId, playerId);
+        const active = Boolean(res?.isWatchlisted);
+        if (!isCustomBoard) updateSleeperWatchlistFlag(playerId, active);
+        btn.className = `btn btn-sm btn-icon ${active ? 'btn-amber' : ''}`;
+        btn.textContent = active ? '★' : '☆';
+        btn.title = active ? 'Remove from Watchlist' : 'Add to Watchlist';
+        btn.setAttribute('aria-pressed', String(active));
+        if (handlers.onWatchlistMutated) handlers.onWatchlistMutated();
+      } catch (err) {
+        alert(`Watchlist update failed: ${err.message}`);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
   tbody.querySelectorAll('[data-cmp-id]').forEach(btn => {
     btn.addEventListener('click', () => handlers.launchCompare(btn.dataset.cmpId, btn.dataset.cmpName, Number(btn.dataset.cmpSeason)));
   });
   tbody.querySelectorAll('[data-film-name]').forEach(btn => {
     btn.addEventListener('click', () => openFilmRoom(btn.dataset.filmName, btn.dataset.filmTeam, btn.dataset.filmLeague));
   });
+}
+
+export function updateSleeperWatchlistFlag(playerId, isWatchlisted) {
+  const target = state.sleepers.raw.find(x => x.playerId === playerId);
+  if (target) target.isWatchlisted = Boolean(isWatchlisted);
 }
 
 function resetSleeperFilters() {

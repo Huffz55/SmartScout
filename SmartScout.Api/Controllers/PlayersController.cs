@@ -8,8 +8,11 @@ using SmartScout.Application.UseCases.Players;
 using SmartScout.Application.UseCases.SeasonStats;
 using SmartScout.Application.UseCases.Teams;
 using System;
+using System.IO;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
 
 namespace SmartScout.Api.Controllers;
 
@@ -25,6 +28,7 @@ public class PlayersController : ControllerBase
     }
 
     public record ScoutNotesDto(string? Notes);
+    public record SeedDemoWatchlistRequest(Guid? BoardId = null);
 
     private static string FormatLeagueFilter(string? league) =>
         string.IsNullOrWhiteSpace(league) || league.Equals("all", StringComparison.OrdinalIgnoreCase)
@@ -320,9 +324,32 @@ public class PlayersController : ControllerBase
     }
 
     [HttpPost("watchlist/seed-demo")]
-    public async Task<IActionResult> SeedDemoWatchlist(CancellationToken cancellationToken = default)
+    public async Task<IActionResult> SeedDemoWatchlist(
+        [FromQuery] Guid? boardId = null,
+        CancellationToken cancellationToken = default)
     {
-        var result = await _mediator.Send(new SeedDemoWatchlistCommand(), cancellationToken);
+        Guid? resolvedBoardId = boardId;
+        if (!resolvedBoardId.HasValue && HttpContext?.Request is { } req && req.ContentLength != 0 && req.HasJsonContentType())
+        {
+            try
+            {
+                using var reader = new StreamReader(req.Body, leaveOpen: true);
+                string rawBody = await reader.ReadToEndAsync(cancellationToken);
+                if (!string.IsNullOrWhiteSpace(rawBody))
+                {
+                    var body = JsonSerializer.Deserialize<SeedDemoWatchlistRequest>(
+                        rawBody,
+                        new JsonSerializerOptions(JsonSerializerDefaults.Web));
+                    resolvedBoardId = body?.BoardId;
+                }
+            }
+            catch (JsonException)
+            {
+                return BadRequest(new { Message = "Invalid JSON payload for boardId." });
+            }
+        }
+
+        var result = await _mediator.Send(new SeedDemoWatchlistCommand(resolvedBoardId), cancellationToken);
         return Ok(result);
     }
 }

@@ -35,16 +35,6 @@ export const TEAM_NAMES = {
   AUT: 'Avtodor Saratov', URA: 'Uralmash Yekaterinburg', RUN: 'Runa Basket Moscow'
 };
 
-export const COUNTRY_FLAGS = {
-  USA: '🇺🇸', TUR: '🇹🇷', ESP: '🇪🇸', SRB: '🇷🇸', ITA: '🇮🇹', GRE: '🇬🇷', LTU: '🇱🇹', FRA: '🇫🇷',
-  GER: '🇩🇪', CRO: '🇭🇷', SLO: '🇸🇮', MNE: '🇲🇪', BIH: '🇧🇦', GEO: '🇬🇪', LAT: '🇱🇻', EST: '🇪🇪',
-  FIN: '🇫🇮', POL: '🇵🇱', ISR: '🇮🇱', CAN: '🇨🇦', AUS: '🇦🇺', ARG: '🇦🇷', BRA: '🇧🇷', NGA: '🇳🇬',
-  SEN: '🇸🇳', SSD: '🇸🇸', COD: '🇨🇩', MLI: '🇲🇱', CIV: '🇨🇮', CMR: '🇨🇲', GBR: '🇬🇧', RUS: '🇷🇺',
-  CZE: '🇨🇿', SWE: '🇸🇪', UKR: '🇺🇦', NED: '🇳🇱', BEL: '🇧🇪', POR: '🇵🇹', DOM: '🇩🇴', PUR: '🇵🇷',
-  MEX: '🇲🇽', BAH: '🇧🇸', NZL: '🇳🇿', JPN: '🇯🇵', CHN: '🇨🇳', KOR: '🇰🇷', ANG: '🇦🇴', CPV: '🇨🇻',
-  EGY: '🇪🇬', TUN: '🇹🇳'
-};
-
 const KNOWN_NATIONALITIES = {
   'Oscar Tshiebwe': 'COD', 'Adama Sanogo': 'MLI', 'Efe Abogidi': 'NGA', 'Veniamin Abosi': 'GRE',
   'Alberto Abalde': 'ESP', 'Awudu Abass': 'ITA', 'Ruslan Abdulbasirov': 'RUS', 'Sardal Abashidze': 'GEO',
@@ -92,27 +82,45 @@ export function formatNationality(nat, league, fullName) {
   if (code) {
     const lower = code.toLowerCase().trim();
     const map = {
-      american: 'USA', 'united states': 'USA', usa: 'USA',
-      turkish: 'TUR', turkey: 'TUR', tur: 'TUR',
-      spanish: 'ESP', spain: 'ESP', esp: 'ESP',
-      serbian: 'SRB', serbia: 'SRB', srb: 'SRB',
-      greek: 'GRE', greece: 'GRE', gre: 'GRE',
-      french: 'FRA', france: 'FRA', fra: 'FRA',
-      german: 'GER', germany: 'GER', ger: 'GER',
-      italian: 'ITA', italy: 'ITA', ita: 'ITA',
-      lithuanian: 'LTU', lithuania: 'LTU', ltu: 'LTU',
-      australian: 'AUS', australia: 'AUS', aus: 'AUS',
-      georgian: 'GEO', georgia: 'GEO', geo: 'GEO',
-      russian: 'RUS', russia: 'RUS', rus: 'RUS',
-      canadian: 'CAN', canada: 'CAN', can: 'CAN',
-      nigerian: 'NGA', nigeria: 'NGA', nga: 'NGA',
-      british: 'GBR', 'great britain': 'GBR', uk: 'GBR', gbr: 'GBR'
+      american: 'USA', 'united states': 'USA', usa: 'USA', us: 'USA',
+      turkish: 'TUR', turkey: 'TUR', turkiye: 'TUR', 'türkiye': 'TUR', tur: 'TUR', tr: 'TUR',
+      spanish: 'ESP', spain: 'ESP', esp: 'ESP', es: 'ESP',
+      serbian: 'SRB', serbia: 'SRB', srb: 'SRB', rs: 'SRB',
+      greek: 'GRE', greece: 'GRE', gre: 'GRE', gr: 'GRE',
+      french: 'FRA', france: 'FRA', fra: 'FRA', fr: 'FRA',
+      german: 'GER', germany: 'GER', deutschland: 'GER', ger: 'GER', de: 'GER',
+      italian: 'ITA', italy: 'ITA', ita: 'ITA', it: 'ITA',
+      lithuanian: 'LTU', lithuania: 'LTU', ltu: 'LTU', lt: 'LTU',
+      latvian: 'LAT', latvia: 'LAT', lat: 'LAT', lv: 'LAT',
+      estonian: 'EST', estonia: 'EST', est: 'EST', ee: 'EST',
+      croatian: 'CRO', croatia: 'CRO', cro: 'CRO', hr: 'CRO',
+      slovenian: 'SLO', slovenia: 'SLO', slo: 'SLO', si: 'SLO',
+      montenegrin: 'MNE', montenegro: 'MNE', mne: 'MNE', me: 'MNE',
+      bosnian: 'BIH', bosnia: 'BIH', bih: 'BIH', ba: 'BIH',
+      israeli: 'ISR', israel: 'ISR', isr: 'ISR', il: 'ISR',
+      polish: 'POL', poland: 'POL', pol: 'POL', pl: 'POL',
+      finnish: 'FIN', finland: 'FIN', fin: 'FIN', fi: 'FIN',
+      belgian: 'BEL', belgium: 'BEL', bel: 'BEL', be: 'BEL',
+      dutch: 'NED', netherlands: 'NED', ned: 'NED', nl: 'NED',
+      ukrainian: 'UKR', ukraine: 'UKR', ukr: 'UKR', ua: 'UKR',
+      czech: 'CZE', czechia: 'CZE', cze: 'CZE', cz: 'CZE',
+      swedish: 'SWE', sweden: 'SWE', swe: 'SWE', se: 'SWE',
+      portuguese: 'POR', portugal: 'POR', por: 'POR', pt: 'POR',
+      australian: 'AUS', australia: 'AUS', aus: 'AUS', au: 'AUS',
+      georgian: 'GEO', georgia: 'GEO', geo: 'GEO', ge: 'GEO',
+      russian: 'RUS', russia: 'RUS', rus: 'RUS', ru: 'RUS',
+      canadian: 'CAN', canada: 'CAN', can: 'CAN', ca: 'CAN',
+      nigerian: 'NGA', nigeria: 'NGA', nga: 'NGA', ng: 'NGA',
+      senegalese: 'SEN', senegal: 'SEN', sen: 'SEN', sn: 'SEN',
+      cameroonian: 'CMR', cameroon: 'CMR', cmr: 'CMR', cm: 'CMR',
+      argentine: 'ARG', argentinian: 'ARG', argentina: 'ARG', arg: 'ARG', ar: 'ARG',
+      brazilian: 'BRA', brazil: 'BRA', bra: 'BRA', br: 'BRA',
+      british: 'GBR', 'great britain': 'GBR', uk: 'GBR', gbr: 'GBR', gb: 'GBR'
     };
     code = map[lower] || (code.length > 3 ? code.slice(0, 3).toUpperCase() : code.toUpperCase());
   }
 
-  const flag = COUNTRY_FLAGS[code] || '🌐';
-  return `${flag} ${code}`;
+  return code || '—';
 }
 
 export function formatRelativeUtc(isoString) {
