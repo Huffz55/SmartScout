@@ -76,10 +76,10 @@ export async function fetchDirectory() {
     }).join('');
 
     tbody.querySelectorAll('[data-open-player]').forEach(btn => {
-      btn.addEventListener('click', () => handlers.openDossier(btn.dataset.openPlayer, 2026));
+      btn.addEventListener('click', () => handlers.openDossier(btn.dataset.openPlayer, null));
     });
     tbody.querySelectorAll('[data-open-team]').forEach(btn => {
-      btn.addEventListener('click', () => handlers.openTeamRoster(btn.dataset.openTeam, btn.dataset.league, 2026));
+      btn.addEventListener('click', () => handlers.openTeamRoster(btn.dataset.openTeam, btn.dataset.league, null));
     });
   } catch (err) {
     if (err.name === 'AbortError') return;

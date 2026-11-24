@@ -58,6 +58,7 @@ export function exportWatchlistCsv() {
   ];
   for (const p of items) {
     const rawEti = p.euroLeagueTransitionIndex ?? p.latestStat?.euroLeagueTransitionIndex;
+    const rawTpr = p.threePointRate ?? p.latestStat?.threePointRate;
     const rawS36 = p.stocksPer36 ?? p.latestStat?.stocksPer36;
     rows.push([
       p.fullName,
@@ -67,7 +68,7 @@ export function exportWatchlistCsv() {
       p.league || '',
       p.nationality || '',
       rawEti != null ? rawEti.toFixed(1) : '',
-      p.threePointRate != null ? (p.threePointRate * 100).toFixed(0) + '%' : '',
+      rawTpr != null ? (rawTpr * 100).toFixed(0) + '%' : '',
       rawS36 != null ? rawS36.toFixed(1) : '',
       p.estimatedMarketValueTier || '',
       p.contractExpirySeason || '',

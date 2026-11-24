@@ -85,7 +85,9 @@ export async function refreshSyncStatus() {
 
     const pillText = document.getElementById('sync-pill-text');
     if (pillText) {
-      pillText.textContent = `${data.liveSeasonYear || 2027} • ${Number(data.totalPlayersCount || 0).toLocaleString()} Players`;
+      const total = Number(data.totalPlayersCount || 0);
+      const compactCount = total >= 1000 ? `${(total / 1000).toFixed(1)}k` : String(total);
+      pillText.textContent = `Data Sync · ${compactCount}`;
     }
 
     const injEl = document.getElementById('sync-stat-injuries');
@@ -96,7 +98,7 @@ export async function refreshSyncStatus() {
     if (covEl) covEl.textContent = `${Number(data.totalPlayersCount || 0).toLocaleString()} players / ${Number(data.liveSeasonStatRowsCount || 0).toLocaleString()} live rows`;
   } catch {
     const pillText = document.getElementById('sync-pill-text');
-    if (pillText) pillText.textContent = 'Sync Status';
+    if (pillText) pillText.textContent = 'Data Sync';
   }
 }
 
@@ -109,12 +111,13 @@ function renderSyncLeagues(filter = '') {
   grid.innerHTML = list.map(l => {
     const checked = state.sync.selectedLeagues.has(l.code);
     return `
-      <label style="display:flex;align-items:center;justify-content:space-between;gap:6px;padding:6px 8px;border-radius:6px;background:var(--bg-canvas);border:1px solid ${checked ? 'rgba(56,189,248,0.45)' : 'var(--border-subtle)'};cursor:pointer;font-size:11.5px">
+      <label title="${escapeHtml(l.name)}" style="display:flex;align-items:center;justify-content:space-between;gap:6px;padding:6px 8px;border-radius:6px;background:var(--bg-canvas);border:1px solid ${checked ? 'rgba(56,189,248,0.45)' : 'var(--border-subtle)'};cursor:pointer;font-size:11.5px">
         <span style="display:flex;align-items:center;gap:6px">
-          <input type="checkbox" data-league-code="${l.code}" ${checked ? 'checked' : ''} />
-          <span>${l.flag} <strong>${l.code}</strong></span>
+          <input type="checkbox" data-league-code="${escapeHtml(l.code)}" ${checked ? 'checked' : ''} />
+          <strong>${escapeHtml(l.code)}</strong>
+          <span style="color:var(--text-muted);font-size:11px">${escapeHtml(l.region || '')}</span>
         </span>
-        <span class="mono" style="color:var(--text-muted);font-size:10.5px">${l.coeff}x</span>
+        <span class="mono" style="color:var(--text-muted);font-size:11px">${escapeHtml(l.coeff)}x</span>
       </label>
     `;
   }).join('');

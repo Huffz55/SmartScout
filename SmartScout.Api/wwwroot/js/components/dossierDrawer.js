@@ -50,14 +50,15 @@ export async function openDossier(playerId, season, pushHistory = true) {
   if (pushHistory && state.dossier.currentPlayer && !drawer.classList.contains('hidden')) {
     state.dossier.historyStack.push({
       playerId: state.dossier.currentPlayer.playerId || state.dossier.currentPlayer.id,
+      fullName: state.dossier.currentPlayer.fullName || 'Previous',
       season: state.dossier.currentPlayer.season
     });
   } else if (!pushHistory && state.dossier.historyStack.length === 0) {
     state.dossier.historyStack = [];
   }
 
-  const backBtn = document.getElementById('dossier-back-btn');
-  if (backBtn) backBtn.classList.toggle('hidden', state.dossier.historyStack.length === 0);
+  const navRow = document.getElementById('dossier-nav-row');
+  if (navRow) navRow.classList.toggle('hidden', state.dossier.historyStack.length === 0);
 
   drawer.classList.remove('hidden');
   document.getElementById('dossier-name').textContent = 'Loading profile...';
@@ -67,7 +68,7 @@ export async function openDossier(playerId, season, pushHistory = true) {
     const p = await fetchPlayerProfileApi(playerId, season);
     state.dossier.currentPlayer = { ...p, playerId: p.playerId || playerId };
     renderDossierProfile(p, playerId, season);
-    loadSimilarPlayers(playerId, p.season || season || 2026);
+    loadSimilarPlayers(playerId, p.season || season || 2027);
   } catch (err) {
     document.getElementById('dossier-name').textContent = 'Profile Unavailable';
     document.getElementById('dossier-subtitle').textContent = err.message;
@@ -75,9 +76,14 @@ export async function openDossier(playerId, season, pushHistory = true) {
 }
 
 function renderDossierProfile(p, playerId, reqSeason) {
-  const activeSeason = p.season || reqSeason || 2026;
+  const activeSeason = p.season || reqSeason || 2027;
   document.getElementById('dossier-name').textContent = p.fullName || 'Unknown Player';
-  document.getElementById('dossier-crumb').textContent = p.fullName || 'Player';
+  const crumbEl = document.getElementById('dossier-crumb');
+  if (crumbEl) {
+    crumbEl.textContent = state.dossier.historyStack.length > 0
+      ? state.dossier.historyStack.map(h => h.fullName).filter(Boolean).concat(p.fullName || 'Player').join(' › ')
+      : '';
+  }
   document.getElementById('dossier-pos').textContent = p.position || 'F';
 
   const subEl = document.getElementById('dossier-subtitle');
@@ -125,7 +131,7 @@ function renderDossierProfile(p, playerId, reqSeason) {
   updateWatchlistBtn(Boolean(p.isWatchlisted));
 
   document.getElementById('dossier-market-tier').textContent = p.estimatedMarketValueTier || 'Tier 4 • Core Rotation';
-  document.getElementById('dossier-contract-expiry').textContent = p.contractExpirySeason ? `${p.contractExpirySeason} Season` : 'Current / 2026';
+  document.getElementById('dossier-contract-expiry').textContent = p.contractExpirySeason ? `${p.contractExpirySeason} Season` : 'Current / 2027';
   document.getElementById('dossier-agency').textContent = p.agencyName || 'Independent / Unassigned';
   document.getElementById('dossier-physicals').textContent = (p.wingspanCm || p.standingReachCm)
     ? `${p.wingspanCm ? p.wingspanCm + 'cm WS' : ''} ${p.standingReachCm ? '/ ' + p.standingReachCm + 'cm SR' : ''}`.trim()
@@ -180,8 +186,14 @@ function renderDossierProfile(p, playerId, reqSeason) {
 
   renderTraits('dossier-strengths-list', p.strengths || [], 'emerald');
   renderTraits('dossier-weaknesses-list', p.weaknesses || [], 'amber');
-  document.getElementById('dossier-strengths-count').textContent = String((p.strengths || []).length);
-  document.getElementById('dossier-weaknesses-count').textContent = String((p.weaknesses || []).length);
+  const strengthsCount = (p.strengths || []).length;
+  const weaknessesCount = (p.weaknesses || []).length;
+  document.getElementById('dossier-strengths-count').textContent = String(strengthsCount);
+  const weakBadge = document.getElementById('dossier-weaknesses-count');
+  if (weakBadge) {
+    weakBadge.className = weaknessesCount > 0 ? 'badge badge-amber' : 'badge badge-emerald';
+    weakBadge.textContent = weaknessesCount > 0 ? String(weaknessesCount) : '0';
+  }
 
   renderCareerTrajectory(p.careerHistory || [], playerId, activeSeason);
   renderInjuries(p.injuries || []);
@@ -216,7 +228,10 @@ function renderTraits(containerId, traits, tone) {
   const el = document.getElementById(containerId);
   if (!el) return;
   if (!traits || traits.length === 0) {
-    el.innerHTML = `<div style="color:var(--text-muted);font-size:11.5px">No notable indicators flagged.</div>`;
+    const emptyMsg = containerId === 'dossier-weaknesses-list'
+      ? 'No major red flags flagged'
+      : 'No standout indicators flagged';
+    el.innerHTML = `<div style="color:var(--text-secondary);font-size:11.5px;padding:2px 0">${emptyMsg}</div>`;
     return;
   }
   const color = tone === 'emerald' ? 'var(--accent-emerald)' : 'var(--accent-amber)';
@@ -443,7 +458,7 @@ export function sendDossierToCompare() {
   const p = state.dossier.currentPlayer;
   if (!p || !onLaunchCompare) return;
   const id = p.playerId || p.id;
-  const season = p.season || 2026;
+  const season = p.season || 2027;
   closeDossier();
   onLaunchCompare(id, p.fullName, season);
 }

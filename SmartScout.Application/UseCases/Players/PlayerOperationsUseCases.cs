@@ -32,7 +32,10 @@ public sealed record WatchlistLatestStatDto(
     decimal? Minutes,
     decimal? TrueShootingPct,
     decimal? EuroLeagueTransitionIndex,
-    decimal? StocksPer36);
+    decimal? StocksPer36,
+    decimal? ThreePointRate = null,
+    decimal? PtsPer36 = null,
+    decimal? UsagePct = null);
 
 public sealed record WatchlistPlayerDto(
     Guid Id,
@@ -255,7 +258,10 @@ public class GetWatchlistQueryHandler : IRequestHandler<GetWatchlistQuery, List<
                 p.EstimatedMarketValueTier,
                 p.ContractExpirySeason,
                 LatestStat = p.SeasonStats
-                    .OrderByDescending(s => s.Season)
+                    .OrderByDescending(s => s.EuroLeagueTransitionIndex != null)
+                    .ThenByDescending(s => s.Season)
+                    .ThenByDescending(s => s.GamesPlayed)
+                    .ThenByDescending(s => s.LeagueDifficultyCoefficient)
                     .Select(s => new WatchlistLatestStatDto(
                         s.Season,
                         s.Points,
@@ -264,7 +270,12 @@ public class GetWatchlistQueryHandler : IRequestHandler<GetWatchlistQuery, List<
                         s.Minutes,
                         s.TrueShootingPct,
                         s.EuroLeagueTransitionIndex,
-                        s.StocksPer36))
+                        s.StocksPer36,
+                        s.ThreePointRate ?? (s.ThreePointsAttempted.HasValue && s.FieldGoalsAttempted.HasValue && s.FieldGoalsAttempted.Value > 0
+                            ? s.ThreePointsAttempted.Value / s.FieldGoalsAttempted.Value
+                            : (decimal?)null),
+                        s.PtsPer36,
+                        s.UsagePct))
                     .FirstOrDefault()
             })
             .ToListAsync(cancellationToken);
@@ -288,7 +299,7 @@ public class GetWatchlistQueryHandler : IRequestHandler<GetWatchlistQuery, List<
     }
 }
 
-public record SeedDemoWatchlistCommand : IRequest<SeedDemoWatchlistResultDto>;
+public record SeedDemoWatchlistCommand(Guid? BoardId = null) : IRequest<SeedDemoWatchlistResultDto>;
 
 public class SeedDemoWatchlistCommandHandler : IRequestHandler<SeedDemoWatchlistCommand, SeedDemoWatchlistResultDto>
 {
@@ -308,16 +319,80 @@ public class SeedDemoWatchlistCommandHandler : IRequestHandler<SeedDemoWatchlist
 
     public async Task<SeedDemoWatchlistResultDto> Handle(SeedDemoWatchlistCommand request, CancellationToken cancellationToken)
     {
+        if (request.BoardId is Guid boardId && boardId != Guid.Empty)
+        {
+            bool boardExists = await _dbContext.ScoutBoards.AnyAsync(b => b.Id == boardId, cancellationToken);
+            if (!boardExists)
+            {
+                throw new KeyNotFoundException($"Scout board '{boardId}' was not found.");
+            }
+
+            var existingIds = (await _dbContext.ScoutBoardEntries
+                .AsNoTracking()
+                .Where(e => e.BoardId == boardId)
+                .Select(e => e.PlayerId)
+                .ToListAsync(cancellationToken))
+                .ToHashSet();
+
+            var boardCandidates = await LoadDemoCandidatesAsync(excludeDefaultWatchlisted: false, cancellationToken);
+            var selectedForBoard = SelectDiverseDemoTargets(boardCandidates, maxCount: 6);
+            var newlyAdded = selectedForBoard.Where(p => !existingIds.Contains(p.Id)).ToList();
+
+            foreach (var player in newlyAdded)
+            {
+                await _dbContext.ScoutBoardEntries.AddAsync(new ScoutBoardEntry(boardId, player.Id), cancellationToken);
+            }
+
+            return await PersistAndBuildSeedResultAsync(
+                newlyAdded,
+                totalWatchlisted: existingIds.Count + newlyAdded.Count,
+                cancellationToken);
+        }
+
         int existingCount = await _dbContext.Players.CountAsync(p => p.IsWatchlisted, cancellationToken);
         if (existingCount > 0)
         {
             return new SeedDemoWatchlistResultDto(0, existingCount, Array.Empty<SeededWatchlistPlayerDto>());
         }
 
+        var candidates = await LoadDemoCandidatesAsync(excludeDefaultWatchlisted: true, cancellationToken);
+        var selected = SelectDiverseDemoTargets(candidates, maxCount: 6);
+        foreach (var player in selected)
+        {
+            player.ToggleWatchlist();
+        }
+
+        return await PersistAndBuildSeedResultAsync(selected, selected.Count, cancellationToken);
+    }
+
+    private async Task<SeedDemoWatchlistResultDto> PersistAndBuildSeedResultAsync(
+        IReadOnlyList<Player> addedPlayers,
+        int totalWatchlisted,
+        CancellationToken cancellationToken)
+    {
+        if (addedPlayers.Count > 0)
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            _cacheState?.BumpVersion();
+        }
+
+        return new SeedDemoWatchlistResultDto(
+            addedPlayers.Count,
+            totalWatchlisted,
+            addedPlayers.Select(p => new SeededWatchlistPlayerDto(
+                p.Id,
+                p.FullName,
+                p.League,
+                p.PrimaryPosition,
+                p.Nationality)).ToList());
+    }
+
+    private Task<List<Player>> LoadDemoCandidatesAsync(bool excludeDefaultWatchlisted, CancellationToken cancellationToken)
+    {
         int minSeason = _settings.LiveSeasonYear - 1;
-        var candidates = await _dbContext.Players
+        return _dbContext.Players
             .Include(p => p.SeasonStats)
-            .Where(p => !p.IsWatchlisted
+            .Where(p => (!excludeDefaultWatchlisted || !p.IsWatchlisted)
                 && p.BirthDate.HasValue
                 && !string.IsNullOrWhiteSpace(p.Nationality)
                 && p.Nationality != "INTL"
@@ -327,28 +402,6 @@ public class SeedDemoWatchlistCommandHandler : IRequestHandler<SeedDemoWatchlist
                 .Max(s => s.EuroLeagueTransitionIndex) ?? 0m)
             .Take(120)
             .ToListAsync(cancellationToken);
-
-        var selected = SelectDiverseDemoTargets(candidates, maxCount: 6);
-        foreach (var player in selected)
-        {
-            player.ToggleWatchlist();
-        }
-
-        if (selected.Count > 0)
-        {
-            await _dbContext.SaveChangesAsync(cancellationToken);
-            _cacheState?.BumpVersion();
-        }
-
-        return new SeedDemoWatchlistResultDto(
-            selected.Count,
-            selected.Count,
-            selected.Select(p => new SeededWatchlistPlayerDto(
-                p.Id,
-                p.FullName,
-                p.League,
-                p.PrimaryPosition,
-                p.Nationality)).ToList());
     }
 
     public static List<Player> SelectDiverseDemoTargets(IEnumerable<Player> candidates, int maxCount = 6)

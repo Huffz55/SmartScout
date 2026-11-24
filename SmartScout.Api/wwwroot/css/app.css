@@ -6,8 +6,8 @@
   --border-subtle: rgba(255, 255, 255, 0.08);
   --border-strong: rgba(255, 255, 255, 0.16);
   --text-primary: #F1F5F9;
-  --text-secondary: #94A3B8;
-  --text-muted: #64748B;
+  --text-secondary: #A3B3C9;
+  --text-muted: #8898B0;
   --accent-sky: #38BDF8;
   --accent-emerald: #10B981;
   --accent-amber: #F59E0B;
@@ -141,7 +141,7 @@ html, body {
 .tab-btn .nav-count {
   padding: 0 5px;
   border-radius: 999px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   background: rgba(245, 158, 11, 0.15);
   color: var(--accent-amber);
@@ -152,20 +152,40 @@ html, body {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 5px 10px;
+  padding: 5px 11px;
   border-radius: 6px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
   font-size: 11.5px;
-  font-weight: 500;
+  font-weight: 600;
   cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
+  transition: border-color 0.15s, background-color 0.15s, color 0.15s;
+  white-space: nowrap;
 }
 
 .sync-pill:hover {
-  border-color: var(--border-strong);
-  color: var(--text-primary);
+  border-color: var(--accent-sky);
+  background: var(--bg-hover);
+  color: #FFFFFF;
+}
+
+.sync-pill svg {
+  color: var(--accent-sky);
+  flex-shrink: 0;
+}
+
+.btn:focus-visible,
+.tab-btn:focus-visible,
+.sync-pill:focus-visible,
+.preset-pill:focus-visible,
+.player-link:focus-visible,
+.team-link:focus-visible,
+.input:focus-visible,
+.select:focus-visible {
+  outline: 2px solid var(--accent-sky);
+  outline-offset: 2px;
 }
 
 .sync-dot {
@@ -239,7 +259,7 @@ html, body {
 
 .field-label {
   display: block;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -335,7 +355,7 @@ html, body {
   gap: 4px;
   padding: 2px 6px;
   border-radius: 4px;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
   border: 1px solid var(--border-subtle);
   background: var(--bg-elevated);
@@ -391,7 +411,7 @@ html, body {
   background: #0E131D;
   border-bottom: 1px solid var(--border-strong);
   padding: 8px 10px;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -555,6 +575,33 @@ html, body {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+}
+
+.drawer-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
+}
+
+.sync-toolbar {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.sync-apikey-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  flex-wrap: nowrap;
+}
+
+.sync-apikey-row .input {
+  flex: 1;
+  min-width: 240px;
 }
 
 .drawer-body {
@@ -722,4 +769,11 @@ html, body {
   .grid-compare, .grid-4, .grid-3 { grid-template-columns: 1fr; }
   .grid-2 { grid-template-columns: 1fr; }
   .nav-tabs { overflow-x: auto; max-width: 100%; }
+}
+
+@media (max-width: 640px) {
+  .drawer-header { flex-direction: column; }
+  .drawer-actions { flex-wrap: wrap; }
+  .sync-apikey-row { flex-wrap: wrap; }
+  .sync-apikey-row .input { min-width: 180px; }
 }

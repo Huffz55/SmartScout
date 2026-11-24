@@ -28,7 +28,7 @@ export function initCompareView() {
   });
 }
 
-export function launchCompareWith(playerId, fullName, season = 2026) {
+export function launchCompareWith(playerId, fullName, season = 2027) {
   selectCompareCandidate('A', playerId, fullName, season);
 }
 
@@ -53,7 +53,7 @@ async function searchComparePlayer(slot) {
     }
 
     menu.innerHTML = items.map(p => `
-      <div class="search-dropdown-item" data-pick-id="${escapeHtml(p.id)}" data-pick-name="${escapeHtml(p.fullName)}" data-pick-season="${p.latestSeason || 2026}">
+      <div class="search-dropdown-item" data-pick-id="${escapeHtml(p.id)}" data-pick-name="${escapeHtml(p.fullName)}" data-pick-season="${p.latestSeason || 2027}">
         <div>
           <strong style="color:var(--text-primary)">${escapeHtml(p.fullName)}</strong>
           <div style="font-size:11px;color:var(--text-secondary)">${escapeHtml(formatTeamName(p.teamName, p.league))} • ${escapeHtml(p.league || '')}</div>
@@ -82,14 +82,14 @@ async function autoSelectTopComparison(league) {
     }
     const a = list[0];
     const b = list[1];
-    selectCompareCandidate('A', a.playerId, a.fullName, a.season || 2026);
-    selectCompareCandidate('B', b.playerId, b.fullName, b.season || 2026);
+    selectCompareCandidate('A', a.playerId, a.fullName, a.season || 2027);
+    selectCompareCandidate('B', b.playerId, b.fullName, b.season || 2027);
   } catch (err) {
     alert(`Auto-compare failed: ${err.message}`);
   }
 }
 
-export function selectCompareCandidate(slot, id, fullName, season = 2026) {
+export function selectCompareCandidate(slot, id, fullName, season = 2027) {
   const key = slot.toLowerCase();
   const input = document.getElementById(`compare-search-${key}`);
   const menu = document.getElementById(`compare-results-${key}`);
@@ -111,8 +111,8 @@ export async function runComparison() {
   const b = state.compare.selectedB;
   if (!a || !b) return;
 
-  const sA = Number(document.getElementById('compare-season-a')?.value || a.season || 2026);
-  const sB = Number(document.getElementById('compare-season-b')?.value || b.season || 2026);
+  const sA = Number(document.getElementById('compare-season-a')?.value || a.season || 2027);
+  const sB = Number(document.getElementById('compare-season-b')?.value || b.season || 2027);
 
   const emptyEl = document.getElementById('compare-empty');
   const contentEl = document.getElementById('compare-content');

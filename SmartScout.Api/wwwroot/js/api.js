@@ -105,8 +105,9 @@ export function saveNotesApi(boardId, playerId, notes) {
   });
 }
 
-export function seedDemoWatchlistApi() {
-  return requestJson('/api/players/watchlist/seed-demo', { method: 'POST' });
+export function seedDemoWatchlistApi(boardId) {
+  const qs = boardId && boardId !== 'default' ? `?boardId=${encodeURIComponent(boardId)}` : '';
+  return requestJson(`/api/players/watchlist/seed-demo${qs}`, { method: 'POST' });
 }
 
 export function fetchSyncStatusApi() {

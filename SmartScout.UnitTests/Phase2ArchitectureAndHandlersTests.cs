@@ -8,10 +8,13 @@ using System.Threading.Tasks;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Query;
+using Microsoft.Extensions.Caching.Memory;
 using SmartScout.Api.BackgroundServices;
 using SmartScout.Api.Controllers;
+using SmartScout.Application.DTOs;
 using SmartScout.Application.Interfaces;
 using SmartScout.Application.Services;
+using SmartScout.Application.UseCases.Analytics;
 using SmartScout.Application.UseCases.Boards;
 using SmartScout.Application.UseCases.Injuries;
 using SmartScout.Application.UseCases.Players;
@@ -211,6 +214,153 @@ public class Phase2ArchitectureAndHandlersTests
         Assert.Equal(3, result.AddedCount);
         Assert.Equal(3, result.TotalWatchlisted);
         Assert.Equal(vBefore + 1, cacheState.Version);
+    }
+
+    [Fact]
+    public async Task SeedDemoWatchlistCommandHandler_WithCustomBoardId_AddsDiverseEntriesWithoutDuplicatesAndBumpsCache()
+    {
+        var g = new Player(141, "Guard", "Custom", "PG", "6-3", 190, "TeamA", "EuroLeague", "ESP", new DateTime(2001, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        var f = new Player(142, "Forward", "Custom", "SF", "6-8", 220, "TeamB", "ACB", "FRA", new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        var c = new Player(143, "Center", "Custom", "C", "7-0", 245, "TeamC", "BSL", "TUR", new DateTime(1999, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        // Player already on Default Watchlist must still be eligible for seeding into a custom board
+        f.ToggleWatchlist(true);
+
+        var sg = new PlayerSeasonStat(g.Id, 2027, 20, 28m, 15m, 6m, 3m, 1.5m, 0.2m, 0.48m, 0.39m, 0.85m, 2m, league: "EuroLeague", teamName: "TeamA");
+        var sf = new PlayerSeasonStat(f.Id, 2027, 20, 28m, 14m, 3m, 6m, 1.3m, 0.7m, 0.50m, 0.38m, 0.82m, 1.5m, league: "ACB", teamName: "TeamB");
+        var sc = new PlayerSeasonStat(c.Id, 2027, 20, 26m, 13m, 2m, 9m, 0.8m, 1.9m, 0.62m, null, 0.72m, 1.4m, league: "BSL", teamName: "TeamC");
+        Attach(sg, g);
+        Attach(sf, f);
+        Attach(sc, c);
+
+        var board = new ScoutBoard("BSL Targets", "Lead Scout");
+        var db = new Phase2FakeDbContext(new[] { g, f, c }, new[] { sg, sf, sc }, Array.Empty<PlayerInjury>(), Array.Empty<IngestionJobLog>());
+        db.ScoutBoards.Add(board);
+        // Pre-seed g onto the custom board so handler must skip duplicates
+        db.ScoutBoardEntries.Add(new ScoutBoardEntry(board.Id, g.Id));
+
+        var cacheState = new ScoutingCacheState();
+        long vBefore = cacheState.Version;
+
+        var handler = new SeedDemoWatchlistCommandHandler(db, new FakeRuntimeSettings(), cacheState);
+        var result = await handler.Handle(new SeedDemoWatchlistCommand(board.Id), CancellationToken.None);
+
+        Assert.Equal(2, result.AddedCount);
+        Assert.Equal(3, result.TotalWatchlisted);
+        Assert.Equal(vBefore + 1, cacheState.Version);
+        Assert.False(g.IsWatchlisted);
+        Assert.False(c.IsWatchlisted);
+        var boardEntries = ((IEnumerable<ScoutBoardEntry>)db.ScoutBoardEntries).Where(e => e.BoardId == board.Id).ToList();
+        Assert.Equal(3, boardEntries.Count);
+        Assert.Equal(3, boardEntries.Select(e => e.PlayerId).Distinct().Count());
+    }
+
+    [Fact]
+    public async Task SeedDemoWatchlistCommandHandler_WithEmptyGuidBoardId_SeedsDefaultWatchlist()
+    {
+        var g = new Player(145, "Default", "Guard", "PG", "6-3", 190, "TeamA", "EuroLeague", "ESP", new DateTime(2001, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        var sg = new PlayerSeasonStat(g.Id, 2027, 20, 28m, 15m, 6m, 3m, 1.5m, 0.2m, 0.48m, 0.39m, 0.85m, 2m, league: "EuroLeague", teamName: "TeamA");
+        Attach(sg, g);
+
+        var db = new Phase2FakeDbContext(new[] { g }, new[] { sg }, Array.Empty<PlayerInjury>(), Array.Empty<IngestionJobLog>());
+        var result = await new SeedDemoWatchlistCommandHandler(db, new FakeRuntimeSettings(), new ScoutingCacheState())
+            .Handle(new SeedDemoWatchlistCommand(Guid.Empty), CancellationToken.None);
+
+        Assert.Equal(1, result.AddedCount);
+        Assert.True(g.IsWatchlisted);
+    }
+
+    [Fact]
+    public async Task SeedDemoWatchlistCommandHandler_WithMissingBoardId_ThrowsKeyNotFoundException()
+    {
+        var db = new Phase2FakeDbContext(Array.Empty<Player>(), Array.Empty<PlayerSeasonStat>(), Array.Empty<PlayerInjury>(), Array.Empty<IngestionJobLog>());
+        var handler = new SeedDemoWatchlistCommandHandler(db, new FakeRuntimeSettings(), new ScoutingCacheState());
+
+        await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+            handler.Handle(new SeedDemoWatchlistCommand(Guid.NewGuid()), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task WatchlistAndBoardQueries_PickPrimarySeasonStintWithEti_AndExposeThreePointRate()
+    {
+        var p = new Player(151, "Maxime", "Raynaud", "C", "7-1", 240, "SAC", "NBA", "FRA",
+            new DateTime(2003, 4, 7, 0, 0, 0, DateTimeKind.Utc));
+        p.ToggleWatchlist(true);
+
+        // Put the 1-GP GLeague cameo (ETI=null) FIRST in the list to catch nondeterministic FirstOrDefault()
+        var gLeagueCameo = new PlayerSeasonStat(p.Id, 2026, 1, 37.0m, 14.0m, 2.0m, 8.0m, 1.0m, 1.0m,
+            0.533m, 0.500m, 0.800m, 2.0m, league: "GLeague", teamName: "STO", fgm: 8.0m, fga: 15.0m, fg3m: 1.0m, fg3a: 2.0m);
+        var nbaMain = new PlayerSeasonStat(p.Id, 2026, 74, 26.5m, 11.2m, 1.8m, 6.8m, 0.6m, 0.7m,
+            0.520m, 0.340m, 0.780m, 1.1m, league: "NBA", teamName: "SAC", fgm: 4.7m, fga: 9.1m, fg3m: 0.34m, fg3a: 1.0m);
+        Attach(gLeagueCameo, p);
+        Attach(nbaMain, p);
+
+        var board = new ScoutBoard("Bigs 2026", "Lead Scout");
+        var db = new Phase2FakeDbContext(new[] { p }, new[] { gLeagueCameo, nbaMain }, Array.Empty<PlayerInjury>(), Array.Empty<IngestionJobLog>());
+        db.ScoutBoards.Add(board);
+        db.ScoutBoardEntries.Add(new ScoutBoardEntry(board.Id, p.Id));
+        await db.SaveChangesAsync();
+
+        var watchlistItem = Assert.Single(await new GetWatchlistQueryHandler(db).Handle(new GetWatchlistQuery(), CancellationToken.None));
+        Assert.NotNull(watchlistItem.LatestStat);
+        Assert.Equal(98.0m, watchlistItem.LatestStat!.EuroLeagueTransitionIndex);
+        Assert.Equal(0.110m, watchlistItem.LatestStat.ThreePointRate);
+
+        var boardItem = Assert.Single(await new GetBoardPlayersQueryHandler(db).Handle(new GetBoardPlayersQuery(board.Id), CancellationToken.None));
+        Assert.NotNull(boardItem.LatestStat);
+        Assert.Equal(98.0m, boardItem.LatestStat!.EuroLeagueTransitionIndex);
+        Assert.Equal(0.110m, boardItem.LatestStat.ThreePointRate);
+    }
+
+    [Theory]
+    [InlineData("PG", new[] { "Pg Prospect" })]
+    [InlineData("SG", new[] { "Sg Prospect" })]
+    [InlineData("SF", new[] { "Sf Prospect" })]
+    [InlineData("PF", new[] { "Pf Prospect", "Combo Forward" })]
+    [InlineData("C", new[] { "Center Prospect", "Combo Forward" })]
+    [InlineData("G", new[] { "Pg Prospect", "Sg Prospect", "Combo Guard", "Swing Guard" })]
+    [InlineData("F", new[] { "Sf Prospect", "Pf Prospect", "Wing Forward", "Swing Guard", "Combo Forward" })]
+    [InlineData("ALL", new[] { "Pg Prospect", "Sg Prospect", "Combo Guard", "Sf Prospect", "Pf Prospect", "Wing Forward", "Center Prospect", "Swing Guard", "Combo Forward" })]
+    public async Task GetSleeperPlayersQueryHandler_FiltersSinglePositionsAndPositionGroups(string positionFilter, string[] expectedNames)
+    {
+        var specs = new[]
+        {
+            (161, "Pg", "Prospect", "PG"),
+            (162, "Sg", "Prospect", "SG"),
+            (163, "Combo", "Guard", "G"),
+            (164, "Sf", "Prospect", "SF"),
+            (165, "Pf", "Prospect", "PF"),
+            (166, "Wing", "Forward", "F"),
+            (167, "Center", "Prospect", "C"),
+            (168, "Swing", "Guard", "G-F"),
+            (169, "Combo", "Forward", "PF/C")
+        };
+
+        var players = new List<Player>();
+        var stats = new List<PlayerSeasonStat>();
+        foreach (var (extId, first, last, pos) in specs)
+        {
+            var player = new Player(extId, first, last, pos, "6-6", 205, "Test Club", "EuroCup", "ESP",
+                new DateTime(2003, 5, 1, 0, 0, 0, DateTimeKind.Utc));
+            var stat = new PlayerSeasonStat(player.Id, 2027, 18, 15.0m, 11.5m, 3.2m, 4.5m, 1.1m, 0.5m,
+                0.50m, 0.40m, 0.85m, 1.1m, trueShootingPct: 0.620m, pir: 15.0m, league: "EuroCup", teamName: "Test Club",
+                fgm: 4.1m, fga: 8.2m, fg3m: 1.6m, fg3a: 4.0m);
+            Attach(stat, player);
+            players.Add(player);
+            stats.Add(stat);
+        }
+
+        var db = new Phase2FakeDbContext(players, stats, Array.Empty<PlayerInjury>(), Array.Empty<IngestionJobLog>());
+        var handler = new GetSleeperPlayersQueryHandler(db, new SleeperScoutingService(), new MemoryCache(new MemoryCacheOptions()), new ScoutingCacheState());
+
+        var result = await handler.Handle(new GetSleeperPlayersQuery
+        {
+            Position = positionFilter,
+            Season = 2027,
+            Top = 25
+        }, CancellationToken.None);
+
+        var actualNames = result.Select(r => r.FullName).OrderBy(x => x).ToArray();
+        Assert.Equal(expectedNames.OrderBy(x => x).ToArray(), actualNames);
     }
 
     [Fact]
